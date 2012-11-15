@@ -1,0 +1,117 @@
+//Code created by imitating aplaymidi, though no actual code copied in
+#include "global.h"
+#include "interpret.h"
+#include "module.h"
+#include "array.h"
+#include <alsa/asoundlib.h>
+
+DECLARATIONS
+
+PIKECLASS Alsa
+{
+	CVAR snd_seq_t *seq;
+	CVAR snd_seq_addr_t port;
+	CVAR int queue;
+	INIT
+	{
+		snd_seq_open(&THIS->seq,"default",SND_SEQ_OPEN_DUPLEX,0);
+		snd_seq_set_client_name(THIS->seq,"pikealsa");
+	}
+	EXIT
+	{
+		snd_seq_close(THIS->seq);
+	}
+	PIKEFUN array(int|string) list_ports()
+	{
+		int nports=0;
+		snd_seq_client_info_t *cinfo;
+		snd_seq_port_info_t *pinfo;
+		pop_n_elems(args);
+		snd_seq_client_info_alloca(&cinfo);
+		snd_seq_port_info_alloca(&pinfo);
+		snd_seq_client_info_set_client(cinfo,-1);
+		while (snd_seq_query_next_client(THIS->seq,cinfo)>=0)
+		{
+			int client=snd_seq_client_info_get_client(cinfo);
+			snd_seq_port_info_set_client(pinfo,client);
+			snd_seq_port_info_set_port(pinfo,-1);
+			while (snd_seq_query_next_port(THIS->seq,pinfo)>=0)
+			{
+				const unsigned need=SND_SEQ_PORT_CAP_WRITE|SND_SEQ_PORT_CAP_SUBS_WRITE;
+				if ((snd_seq_port_info_get_capability(pinfo)&need)!=need) continue;
+				push_int(snd_seq_port_info_get_client(pinfo));
+				push_int(snd_seq_port_info_get_port(pinfo));
+				push_string(make_shared_string(snd_seq_client_info_get_name(cinfo)));
+				push_string(make_shared_string(snd_seq_port_info_get_name(pinfo)));
+				push_array(aggregate_array(4));
+				++nports;
+			}
+		}
+		push_array(aggregate_array(nports));
+	}
+	PIKEFUN int set_port(int client,int port)
+	//PIKEFUN void set_port(array(int|string) info) //TODO: Accept an array of at least two elements, the first two of which are integers (they become client and port) - will accept either get_port's return or one from list_ports
+	//PIKEFUN void set_port(string address) //TODO: Accept a string, and pass it through snd_seq_parse_address(seq,&port,"some string")
+	{
+		int err;
+		snd_seq_port_info_t *pinfo;
+		THIS->port.client=client; THIS->port.port=port;
+		snd_seq_port_info_alloca(&pinfo);
+		snd_seq_port_info_set_port(pinfo,0);
+		snd_seq_port_info_set_port_specified(pinfo,1);
+		snd_seq_port_info_set_name(pinfo,"pikealsa");
+		snd_seq_port_info_set_capability(pinfo,0); //the original said / * sic * / here
+		snd_seq_port_info_set_type(pinfo,SND_SEQ_PORT_TYPE_MIDI_GENERIC|SND_SEQ_PORT_TYPE_APPLICATION);
+		err=snd_seq_create_port(THIS->seq,pinfo); if (err<0) RETURN(err);
+		printf("create_port %d\n",err);
+		THIS->queue=snd_seq_alloc_named_queue(THIS->seq,"pikealsa");
+		printf("queue %d\n",THIS->queue);
+		err=snd_seq_connect_to(THIS->seq,0,THIS->port.client,THIS->port.port); if (err<0) RETURN(err);
+		printf("connect_to %d\n",err);
+		snd_seq_start_queue(THIS->seq,THIS->queue,0);
+		RETURN(err);
+	}
+	PIKEFUN array(int) get_port()
+	{
+		push_int(THIS->port.client);
+		push_int(THIS->port.port);
+		push_array(aggregate_array(2));
+	}
+	void msg(int type,int channel,int d1,int d2)
+	{
+		snd_seq_event_t ev;
+		snd_seq_ev_clear(&ev);
+		ev.queue=THIS->queue;
+		ev.source.port=0;
+		ev.flags=SND_SEQ_TIME_STAMP_TICK;
+		ev.type=type;
+		ev.time.tick=0;
+		ev.dest=THIS->port;
+		snd_seq_ev_set_fixed(&ev);
+		ev.data.note.channel=channel; //Assume that this is in the same place for everything and violate a rule of unions.
+		if (type==SND_SEQ_EVENT_NOTEON || type==SND_SEQ_EVENT_NOTEOFF || type==SND_SEQ_EVENT_KEYPRESS)
+		{
+			ev.data.note.note=d1;
+			ev.data.note.velocity=d2;
+		}
+		else //if (type==SND_SEQ_EVENT_PGMCHANGE || type==SND_SEQ_EVENT_CHANPRESS || type==SND_SEQ_EVENT_PITCHBEND || type==SND_SEQ_EVENT_CONTROLLER)
+		{
+			ev.data.control.param=d1;
+			ev.data.control.value=d2;
+		}
+		snd_seq_event_output(THIS->seq,&ev);
+		snd_seq_drain_output(THIS->seq);
+	}
+	PIKEFUN void note_on(int channel,int note,int velocity) {msg(SND_SEQ_EVENT_NOTEON,channel,note,velocity);}
+	PIKEFUN void note_off(int channel,int note,int velocity) {msg(SND_SEQ_EVENT_NOTEOFF,channel,note,velocity);}
+	PIKEFUN void note_pressure(int channel,int note,int pressure) {msg(SND_SEQ_EVENT_KEYPRESS,channel,note,pressure);}
+	PIKEFUN void prog_chg(int channel,int patch) {msg(SND_SEQ_EVENT_PGMCHANGE,channel,0,patch);} //Program/Patch Change
+	PIKEFUN void chan_pressure(int channel,int pressure) {msg(SND_SEQ_EVENT_CHANPRESS,channel,0,pressure);}
+	PIKEFUN void controller(int channel,int param,int value) {msg(SND_SEQ_EVENT_CONTROLLER,channel,param,value);}
+	PIKEFUN void pitch_bend(int channel,int position) {msg(SND_SEQ_EVENT_PITCHBEND,channel,0,position);} //Note that position is a signed 14-bit quantity
+	PIKEFUN void wait()
+	{
+		snd_seq_sync_output_queue(THIS->seq);
+		pop_n_elems(args);
+	}
+}

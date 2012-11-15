@@ -1,0 +1,16 @@
+This file contains any messages produced by compilers while
+running configure, to aid debugging if configure makes a mistake.
+
+configure:700: checking for gcc
+configure:817: checking whether the C compiler (/usr/local/pike/7.9.5/include/pike/smartlink gcc  -g -ggdb3 -m64  -L/home/sikorsky/pike/build/linux-2.6.35-32-generic-x86_64/bundles/lib64 -L/home/sikorsky/pike/build/linux-2.6.35-32-generic-x86_64/bundles/lib/64 -L/home/sikorsky/pike/build/linux-2.6.35-32-generic-x86_64/bundles/lib/. -L/usr/local/lib -R/usr/local/lib -L/usr/lib/gcc/x86_64-linux-gnu/4.5 -R/usr/lib/gcc/x86_64-linux-gnu/4.5 -L/usr/lib -R/usr/lib -L/lib -R/lib -L/usr/lib/x86_64-linux-gnu -R/usr/lib/x86_64-linux-gnu -ldl -lrt -lnsl -lm  -lpthread -lcrypt) works
+configure:833: /usr/local/pike/7.9.5/include/pike/smartlink gcc -o conftest  -g -ggdb3 -m64  -I/home/sikorsky/pike/build/linux-2.6.35-32-generic-x86_64/bundles/include -I/usr/local/include  -L/home/sikorsky/pike/build/linux-2.6.35-32-generic-x86_64/bundles/lib64 -L/home/sikorsky/pike/build/linux-2.6.35-32-generic-x86_64/bundles/lib/64 -L/home/sikorsky/pike/build/linux-2.6.35-32-generic-x86_64/bundles/lib/. -L/usr/local/lib -R/usr/local/lib -L/usr/lib/gcc/x86_64-linux-gnu/4.5 -R/usr/lib/gcc/x86_64-linux-gnu/4.5 -L/usr/lib -R/usr/lib -L/lib -R/lib -L/usr/lib/x86_64-linux-gnu -R/usr/lib/x86_64-linux-gnu -ldl -lrt -lnsl -lm  -lpthread -lcrypt conftest.c  1>&5
+configure:859: checking whether the C compiler (/usr/local/pike/7.9.5/include/pike/smartlink gcc  -g -ggdb3 -m64  -L/home/sikorsky/pike/build/linux-2.6.35-32-generic-x86_64/bundles/lib64 -L/home/sikorsky/pike/build/linux-2.6.35-32-generic-x86_64/bundles/lib/64 -L/home/sikorsky/pike/build/linux-2.6.35-32-generic-x86_64/bundles/lib/. -L/usr/local/lib -R/usr/local/lib -L/usr/lib/gcc/x86_64-linux-gnu/4.5 -R/usr/lib/gcc/x86_64-linux-gnu/4.5 -L/usr/lib -R/usr/lib -L/lib -R/lib -L/usr/lib/x86_64-linux-gnu -R/usr/lib/x86_64-linux-gnu -ldl -lrt -lnsl -lm  -lpthread -lcrypt) is a cross-compiler
+configure:873: checking whether we are using GNU C
+configure:882: /usr/local/pike/7.9.5/include/pike/smartlink gcc -E conftest.c
+configure:901: checking whether /usr/local/pike/7.9.5/include/pike/smartlink gcc accepts -g
+configure:973: checking if we are using TCC (TenDRA C Compiler)
+configure:999: checking if we are using ICC (Intel C Compiler)
+configure:1041: checking how to run the C preprocessor
+configure:1189: checking for libgcc file name
+configure:1251: checking whether make sets ${MAKE}
+configure:1283: checking for the Pike base directory

@@ -1,0 +1,4 @@
+AC_INIT(pikealsa.cmod)
+AC_MODULE_INIT()
+AC_OUTPUT(Makefile)
+
