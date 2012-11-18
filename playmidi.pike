@@ -127,7 +127,8 @@ int main(int argc,array(string) argv)
 				case 0x58:
 					sscanf(ev[3],"%c%c%c%c",tsnum,tsdem,metronome,barlen);
 					//write("TIMESIG. %d/%d, met %d, bar %d (norm 8)\n",tsnum,1<<tsdem,metronome,barlen);
-					tick_per_beat=timediv/(1<<(tsdem-2)); tick_per_bar=tick_per_beat*tsnum;
+					if (tsdem<2) tick_per_beat=timediv*4/(1<<tsdem); else tick_per_beat=timediv/(1<<(tsdem-2));
+					tick_per_bar=tick_per_beat*tsnum;
 					break;
 				case 0x2f: chunkptr[track]=sizeof(chunks[track]); break; //End of track. Ignore anything after it.
 			}
