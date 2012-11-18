@@ -78,6 +78,7 @@ int main(int argc,array(string) argv)
 	array(int) chunkptr=allocate(sizeof(chunks));
 	int tsnum,tsdem,metronome,barlen;
 	int bar=0,beat=0,pos=0,tick_per_beat=timediv,tick_per_bar=timediv*4;
+	string info=sprintf("%3d bpm, %d %d",bpm,tsnum,1<<tsdem);
 	while (1)
 	{
 		int firstev=1<<30,track=-1;
@@ -97,7 +98,7 @@ int main(int argc,array(string) argv)
 				sleep((tick_per_beat-pos)*time_division);
 				firstev-=tick_per_beat-pos;
 				pos=0; if (++beat==tsnum) {beat=0; ++bar;}
-				write(" [%3d bpm] %d : %d %s\r",bpm,bar,beat,beat?"        ":"---     ");
+				write(" [%s] %d : %d %s\r",info,bar,beat,beat?"        ":"---     ");
 			}
 			if (firstev)
 			{
@@ -105,7 +106,7 @@ int main(int argc,array(string) argv)
 				sleep(firstev*time_division);
 				pos+=firstev;
 			}
-			write(" [%3d bpm] %d : %d %s\r",bpm,bar,beat,beat?"        ":"---     ");
+			write(" [%s] %d : %d %s\r",info,bar,beat,beat?"        ":"---     ");
 		}
 		array ev=chunks[track][chunkptr[track]++];
 		switch (ev[1])
@@ -123,12 +124,14 @@ int main(int argc,array(string) argv)
 					sscanf(ev[3],"%3c",tempo);
 					time_division=tempo*.000001/timediv;
 					bpm=60000000/tempo;
+					info=sprintf("%3d bpm, %d %d",bpm,tsnum,1<<tsdem);
 					break;
 				case 0x58:
 					sscanf(ev[3],"%c%c%c%c",tsnum,tsdem,metronome,barlen);
 					//write("TIMESIG. %d/%d, met %d, bar %d (norm 8)\n",tsnum,1<<tsdem,metronome,barlen);
 					if (tsdem<2) tick_per_beat=timediv*4/(1<<tsdem); else tick_per_beat=timediv/(1<<(tsdem-2));
 					tick_per_bar=tick_per_beat*tsnum;
+					info=sprintf("%3d bpm, %d %d",bpm,tsnum,1<<tsdem);
 					break;
 				case 0x2f: chunkptr[track]=sizeof(chunks[track]); break; //End of track. Ignore anything after it.
 			}
