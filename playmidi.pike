@@ -63,17 +63,19 @@ array(array(string|array(array(int|string)))) parsesmf(string data)
 
 int main(int argc,array(string) argv)
 {
-	array(array(string|array(array(int|string)))) chunks=parsesmf(Stdio.read_file(argv[1]));
+	mapping args=Arg.parse(argv);
+	object alsa=Public.Sound.ALSA.ALSA();
+	write("Ports available:\n%{%3d:%-3d  %-32.32s %s\n%}",alsa->list_ports());
+	if (!sizeof(args[Arg.REST]) || !args->port) exit(0,"USAGE: pike playmidi.pike --port=NN:N midifile.mid\n");
+	sscanf(args->port,"%d:%d",int client,int port);
+	array(array(string|array(array(int|string)))) chunks=parsesmf(Stdio.read_file(args[Arg.REST][0]));
 	sscanf(chunks[0][1],"%2c%*2c%2c",int type,int timediv); //timediv == ticks per quarter note
 	//if (time_division&0x8000) //it's SMPTE timing?
-	write("Time division: %d\n",timediv);
+	//write("Time division: %d\n",timediv);
 	int tempo=500000,bpm=120;
 	float time_division=tempo*.000001/timediv;
-	object alsa=Public.Sound.ALSA.ALSA();
-	array(string|int) ports=alsa->list_ports();
-	write("Ports available:\n%{%3d:%-3d  %-32.32s %s\n%}",ports);
-	write("set_port: %O\n",alsa->set_port(24,1));
-	write("get_port:%{ %d%}\n",alsa->get_port());
+	alsa->set_port(client,port);
+	//write("get_port:%{ %d%}\n",alsa->get_port());
 	chunks=column(chunks[1..],1);
 	array(int) chunkptr=allocate(sizeof(chunks));
 	int tsnum,tsdem,metronome,barlen;
