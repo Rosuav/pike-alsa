@@ -61,26 +61,53 @@ array(array(string|array(array(int|string)))) parsesmf(string data)
 	return chunks;
 }
 
+mapping args;
+object alsa;
+GTK2.Widget mainwindow,lyrics,status;
+string lyrictxt="";
+
 int main(int argc,array(string) argv)
 {
-	mapping args=Arg.parse(argv);
-	object alsa=Public.Sound.ALSA.ALSA();
+	args=Arg.parse(argv);
+	alsa=Public.Sound.ALSA.ALSA();
 	write("Ports available:\n%{%3d:%-3d  %-32.32s %s\n%}",alsa->list_ports());
-	if (!sizeof(args[Arg.REST]) || !args->port) exit(0,"USAGE: pike playmidi.pike --port=NN:N midifile.mid\n");
+	if (!sizeof(args[Arg.REST]) || !args->port) exit(0,"USAGE: pike playmidi.pike [-X] --port=NN:N midifile.mid\n");
 	sscanf(args->port,"%d:%d",int client,int port);
-	array(array(string|array(array(int|string)))) chunks=parsesmf(Stdio.read_file(args[Arg.REST][0]));
+	alsa->set_port(client,port);
+	if (!args->X) playmidis(); //Easy, just do it synchronously. (It won't return.)
+	//Otherwise, create a window - which has to be done on the main thread, it seems.
+	GTK2.setup_gtk();
+	mainwindow=GTK2.Window(GTK2.WindowToplevel);
+	mainwindow->set_title("PikeMidi Display");
+	mainwindow->add(GTK2.Vbox(0,0)
+		->add(status=GTK2.Label("status goes here")->set_size_request(-1,20)->set_alignment(0.0,0.0))
+		->add(lyrics=GTK2.Label("lyrics go here"))
+	)->show_all();
+	thread_create(playmidis);
+	return -1;
+}
+
+void playmidis() {foreach (args[Arg.REST],string fn) playmidi(fn); exit(0);}
+
+void playmidi(string fn)
+{
+	array(array(string|array(array(int|string)))) chunks=parsesmf(Stdio.read_file(fn));
+	lyrictxt="";
+	if (lyrics) {mainwindow->resize(1,1); lyrics->set_text(fn);}
+	int lyricsraw=0;
 	sscanf(chunks[0][1],"%2c%*2c%2c",int type,int timediv); //timediv == ticks per quarter note
 	//if (time_division&0x8000) //it's SMPTE timing?
 	//write("Time division: %d\n",timediv);
 	int tempo=500000,bpm=120;
 	float time_division=tempo*.000001/timediv;
-	alsa->set_port(client,port);
 	//write("get_port:%{ %d%}\n",alsa->get_port());
 	chunks=column(chunks[1..],1);
 	array(int) chunkptr=allocate(sizeof(chunks));
 	int tsnum,tsdem,metronome,barlen;
 	int bar=0,beat=0,pos=0,tick_per_beat=timediv,tick_per_bar=timediv*4;
 	string info=sprintf("%3d bpm, %d %d",bpm,tsnum,1<<tsdem);
+	function showstatus=args->X?lambda() {status->set_text(sprintf(" [%s] %d : %d %s\r",info,bar,beat,beat?"        ":"---     "));}
+		:lambda() {write(" [%s] %d : %d %s\r",info,bar,beat,beat?"        ":"---     ");};
 	while (1)
 	{
 		int firstev=1<<30,track=-1;
@@ -100,7 +127,7 @@ int main(int argc,array(string) argv)
 				sleep((tick_per_beat-pos)*time_division);
 				firstev-=tick_per_beat-pos;
 				pos=0; if (++beat==tsnum) {beat=0; ++bar;}
-				write(" [%s] %d : %d %s\r",info,bar,beat,beat?"        ":"---     ");
+				showstatus();
 			}
 			if (firstev)
 			{
@@ -108,7 +135,7 @@ int main(int argc,array(string) argv)
 				sleep(firstev*time_division);
 				pos+=firstev;
 			}
-			write(" [%s] %d : %d %s\r",info,bar,beat,beat?"        ":"---     ");
+			showstatus();
 		}
 		array ev=chunks[track][chunkptr[track]++];
 		switch (ev[1])
@@ -136,11 +163,21 @@ int main(int argc,array(string) argv)
 					info=sprintf("%3d bpm, %d %d",bpm,tsnum,1<<tsdem);
 					break;
 				case 0x2f: chunkptr[track]=sizeof(chunks[track]); break; //End of track. Ignore anything after it.
+				case 0x05: if (lyrics)
+				{
+					string ly=ev[3];
+					if (!lyricsraw)
+					{
+						if (ly[-1]=='-') ly=ly[..<1];
+						else if (ly[-1]==' ') lyricsraw=1; //Some MIDI files have lyrics already parsed in this way, some don't. I don't know how I'm supposed to recognize which is which.
+						else ly+=" ";
+					}
+					lyrics->set_text(lyrictxt+=ly);
+				}
+				break;
 			}
 			break;
 		}
 	}
-		
 	alsa->wait();
-	write("Done!\n");
 }
