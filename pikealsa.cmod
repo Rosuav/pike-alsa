@@ -7,7 +7,7 @@
 
 DECLARATIONS
 
-PIKECLASS Alsa
+PIKECLASS ALSA
 {
 	CVAR snd_seq_t *seq;
 	CVAR snd_seq_addr_t port;
@@ -63,11 +63,8 @@ PIKECLASS Alsa
 		snd_seq_port_info_set_capability(pinfo,0); //the original said / * sic * / here
 		snd_seq_port_info_set_type(pinfo,SND_SEQ_PORT_TYPE_MIDI_GENERIC|SND_SEQ_PORT_TYPE_APPLICATION);
 		err=snd_seq_create_port(THIS->seq,pinfo); if (err<0) RETURN(err);
-		printf("create_port %d\n",err);
 		THIS->queue=snd_seq_alloc_named_queue(THIS->seq,"pikealsa");
-		printf("queue %d\n",THIS->queue);
 		err=snd_seq_connect_to(THIS->seq,0,THIS->port.client,THIS->port.port); if (err<0) RETURN(err);
-		printf("connect_to %d\n",err);
 		snd_seq_start_queue(THIS->seq,THIS->queue,0);
 		RETURN(err);
 	}
@@ -102,13 +99,13 @@ PIKECLASS Alsa
 		snd_seq_event_output(THIS->seq,&ev);
 		snd_seq_drain_output(THIS->seq);
 	}
-	PIKEFUN void note_on(int channel,int note,int velocity) {msg(SND_SEQ_EVENT_NOTEON,channel,note,velocity);}
-	PIKEFUN void note_off(int channel,int note,int velocity) {msg(SND_SEQ_EVENT_NOTEOFF,channel,note,velocity);}
-	PIKEFUN void note_pressure(int channel,int note,int pressure) {msg(SND_SEQ_EVENT_KEYPRESS,channel,note,pressure);}
-	PIKEFUN void prog_chg(int channel,int patch) {msg(SND_SEQ_EVENT_PGMCHANGE,channel,0,patch);} //Program/Patch Change
-	PIKEFUN void chan_pressure(int channel,int pressure) {msg(SND_SEQ_EVENT_CHANPRESS,channel,0,pressure);}
-	PIKEFUN void controller(int channel,int param,int value) {msg(SND_SEQ_EVENT_CONTROLLER,channel,param,value);}
-	PIKEFUN void pitch_bend(int channel,int position) {msg(SND_SEQ_EVENT_PITCHBEND,channel,0,position);} //Note that position is a signed 14-bit quantity
+	PIKEFUN void note_on(int channel,int note,int velocity) {msg(SND_SEQ_EVENT_NOTEON,channel,note,velocity); pop_n_elems(args);}
+	PIKEFUN void note_off(int channel,int note,int velocity) {msg(SND_SEQ_EVENT_NOTEOFF,channel,note,velocity); pop_n_elems(args);}
+	PIKEFUN void note_pressure(int channel,int note,int pressure) {msg(SND_SEQ_EVENT_KEYPRESS,channel,note,pressure); pop_n_elems(args);}
+	PIKEFUN void prog_chg(int channel,int patch) {msg(SND_SEQ_EVENT_PGMCHANGE,channel,0,patch); pop_n_elems(args);} //Program/Patch Change
+	PIKEFUN void chan_pressure(int channel,int pressure) {msg(SND_SEQ_EVENT_CHANPRESS,channel,0,pressure); pop_n_elems(args);}
+	PIKEFUN void controller(int channel,int param,int value) {msg(SND_SEQ_EVENT_CONTROLLER,channel,param,value); pop_n_elems(args);}
+	PIKEFUN void pitch_bend(int channel,int position) {msg(SND_SEQ_EVENT_PITCHBEND,channel,0,position); pop_n_elems(args);} //Note that position is a signed 14-bit quantity
 	PIKEFUN void wait()
 	{
 		snd_seq_sync_output_queue(THIS->seq);

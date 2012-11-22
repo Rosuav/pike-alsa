@@ -82,8 +82,11 @@ LIBGCC=/usr/lib/gcc/x86_64-linux-gnu/4.5.1/libgcc.a
 # End of make_variables.in
 OBJS=pikealsa.o
 AUTODOC_SRC_IN=
-MODDIR=
-MODNAME=pikealsa
+MODDIR=Public.pmod/Sound.pmod/
+MODNAME=ALSA
+MODULE_NAME=Public.Sound.ALSA
+MODULE_DIR_NAME=Public_Sound_ALSA
+MODULE_LICENSE=BSD
 MODULE_PMOD_IN=
 MODULE_LDFLAGS= -L/home/sikorsky/pike/build/linux-2.6.35-32-generic-x86_64/bundles/lib64 -L/home/sikorsky/pike/build/linux-2.6.35-32-generic-x86_64/bundles/lib/64 -L/home/sikorsky/pike/build/linux-2.6.35-32-generic-x86_64/bundles/lib/. -L/usr/local/lib -R/usr/local/lib -L/usr/lib/gcc/x86_64-linux-gnu/4.5 -R/usr/lib/gcc/x86_64-linux-gnu/4.5 -L/usr/lib -R/usr/lib -L/lib -R/lib -L/usr/lib/x86_64-linux-gnu -R/usr/lib/x86_64-linux-gnu -ldl -lrt -lnsl -lm  -lpthread -lcrypt  -lasound
 CONFIG_HEADERS=

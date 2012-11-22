@@ -69,7 +69,7 @@ int main(int argc,array(string) argv)
 	write("Time division: %d\n",timediv);
 	int tempo=500000,bpm=120;
 	float time_division=tempo*.000001/timediv;
-	object alsa=load_module("./module.so")->Alsa();
+	object alsa=Public.Sound.ALSA.ALSA();
 	array(string|int) ports=alsa->list_ports();
 	write("Ports available:\n%{%3d:%-3d  %-32.32s %s\n%}",ports);
 	write("set_port: %O\n",alsa->set_port(24,1));
