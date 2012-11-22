@@ -1,0 +1,12 @@
+config*
+!configure.in
+*.mid
+dependencies
+linker_options
+Makefile
+make_variables
+modlist_segment
+module.so
+pikealsa.c
+pikealsa.o
+propagated_variables
