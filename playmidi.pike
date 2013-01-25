@@ -87,7 +87,7 @@ int main(int argc,array(string) argv)
 	return -1;
 }
 
-void playmidis() {foreach (args[Arg.REST],string fn) playmidi(fn); exit(0);}
+void playmidis() {foreach (args[Arg.REST],string fn) {playmidi(fn); sleep(1);} exit(0);}
 
 void playmidi(string fn)
 {
