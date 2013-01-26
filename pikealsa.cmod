@@ -106,6 +106,7 @@ PIKECLASS ALSA
 	PIKEFUN void chan_pressure(int channel,int pressure) {msg(SND_SEQ_EVENT_CHANPRESS,channel,0,pressure); pop_n_elems(args);}
 	PIKEFUN void controller(int channel,int param,int value) {msg(SND_SEQ_EVENT_CONTROLLER,channel,param,value); pop_n_elems(args);}
 	PIKEFUN void pitch_bend(int channel,int position) {msg(SND_SEQ_EVENT_PITCHBEND,channel,0,position); pop_n_elems(args);} //Note that position is a signed 14-bit quantity
+	PIKEFUN void reset() {msg(SND_SEQ_EVENT_RESET,0,0,0); pop_n_elems(args);}
 	PIKEFUN void wait()
 	{
 		snd_seq_sync_output_queue(THIS->seq);
