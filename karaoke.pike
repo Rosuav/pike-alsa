@@ -84,6 +84,7 @@ function parsesmf=parser->parsesmf;
 GTK2.Widget mainwindow,lyrics,status,position;
 array(GTK2.Widget) piano=allocate(16),channame=allocate(16),chanpatch=allocate(16);
 string lyrictxt="";
+Thread.Thread midithrd;
 
 //Helper function to build the toggle buttons. Half-brightness for unselected, full for selected.
 GTK2.ToggleButton toggle(int r,int g,int b,mixed ... onclick)
@@ -96,16 +97,43 @@ GTK2.ToggleButton toggle(int r,int g,int b,mixed ... onclick)
 	return obj;
 }
 
+//Helper function to create a button and attach an event
+GTK2.Button Button(string|mapping props,mixed ... onclick)
+{
+	GTK2.Button obj=GTK2.Button(props);
+	obj->signal_connect("clicked",@onclick);
+	return obj;
+}
+
+void silence(int chan) //Mute all currently-playing notes on any channel
+{
+	foreach (indices(piano[chan]->notes),int note) {alsa->note_off(chan,note,64); piano[chan]->set_note(note,0);}
+}
+void hush() {for (int i=0;i<16;++i) silence(i);} //... or on all channels
+
 array(int) muted=allocate(16),soloed=allocate(16);
 int anysolo; //If nonzero, channels not listed in soloed get their velocities cut
 void mute(object self,int chan)
 {
-	if (muted[chan]=!muted[chan])
-		foreach (indices(piano[chan]->notes),int note) {alsa->note_off(chan,note,64); piano[chan]->set_note(note,0);} //Mute all currently-playing notes on that channel
+	if (muted[chan]=!muted[chan]) silence(chan);
 }
 void solo(object self,int chan)
 {
 	soloed[chan]=!soloed[chan]; anysolo=`+(@soloed);
+}
+
+int paused;
+object pausemtx=Thread.Mutex();
+object pausecond=Thread.Condition();
+void pause()
+{
+	if (paused=!paused) hush();
+	else pausecond->signal();
+}
+void stop()
+{
+	for (int i=0;i<16;++i) silence(i);
+	exit(0); //Or maybe not. I don't know.
 }
 
 int main(int argc,array(string) argv)
@@ -131,12 +159,16 @@ int main(int argc,array(string) argv)
 		->attach_defaults(status=GTK2.Label("status goes here")->set_size_request(-1,20)->set_alignment(0.0,0.0),0,5,0,1)
 		->attach_defaults(lyrics=GTK2.Label("lyrics go here"),0,5,17,18)
 		->attach_defaults(position=GTK2.Hscale(GTK2.Adjustment())->unset_flags(GTK2.CanFocus),0,5,18,19)
+		->attach_defaults(GTK2.HbuttonBox()
+			->add(Button("Play/pause",pause))
+			->add(Button("Stop",stop))
+		,0,5,19,20)
 	)->show_all();
-	thread_create(playmidis);
+	midithrd=thread_create(playmidis);
 	return -1;
 }
 
-void playmidis() {foreach (args[Arg.REST],string fn) {playmidi(fn); alsa->reset(); alsa->wait(); sleep(1);} exit(0);}
+void playmidis() {foreach (args[Arg.REST],string fn) {playmidi(fn); hush(); alsa->reset(); alsa->wait(); sleep(1);} exit(0);}
 
 void playmidi(string fn)
 {
@@ -156,7 +188,7 @@ void playmidi(string fn)
 	int bar=0,beat=0,pos=0,tick_per_beat=timediv,tick_per_bar=timediv*4;
 	int abspos=0; //Absolute position, effectively bar+beat+pos
 	string info=sprintf("%3d bpm, %d %d",bpm,tsnum,1<<tsdem);
-	function showstatus=lambda() {status->set_text(sprintf(" [%s] %d : %d %s\r",info,bar,beat,beat?"        ":"---     ")); position->set_value(abspos);};
+	function showstatus=lambda() {status->set_text(sprintf(" [%s] %d : %d %s\r",info,bar,beat,beat?"        ":"---     ")); position->set_value(abspos); while (paused) pausecond->wait(pausemtx->lock());};
 	int lyrtrack=-1;
 	int maxlen=0;
 	array(int) chan=({-1})*sizeof(chunks); //Associate channel numbers with chunks, for the benefit of the track-name labels
@@ -179,12 +211,13 @@ void playmidi(string fn)
 		{
 			foreach (chunks;int i;array chunk) if (chunkptr[i]<sizeof(chunk)) chunk[chunkptr[i]][0]-=firstev;
 			//write("Sleeping %d [%f]\n",firstev,firstev*time_division);
-			abspos+=firstev;
 			while (pos+firstev>=tick_per_beat)
 			{
 				//write("Tick %d/%d leaving %d\n",tick_per_beat-pos,firstev,firstev-(tick_per_beat-pos));
-				sleep((tick_per_beat-pos)*time_division);
-				firstev-=tick_per_beat-pos;
+				int wait=tick_per_beat-pos;
+				sleep(wait*time_division);
+				firstev-=wait;
+				abspos+=wait;
 				pos=0; if (++beat==tsnum) {beat=0; ++bar;}
 				showstatus();
 			}
@@ -193,6 +226,7 @@ void playmidi(string fn)
 				//write("Tick %d\n",firstev);
 				sleep(firstev*time_division);
 				pos+=firstev;
+				abspos+=firstev;
 			}
 			showstatus();
 		}
