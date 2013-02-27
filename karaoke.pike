@@ -173,7 +173,7 @@ void playmidi(string fn)
 		{
 			int tm=chunk[chunkptr[i]][0];
 			if (tm<firstev) {firstev=tm; track=i;} //Note that it has to be _lower_, meaning that earlier tracks take precedence over later ones.
-		}mainwindow->resize(1,1);
+		}
 		if (track==-1) break; //No more events!
 		if (firstev)
 		{
