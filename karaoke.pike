@@ -77,6 +77,44 @@ class PianoKeyboard
 	}
 }
 
+class TimeMarker //Slider that shows the time in [[H:]M:]S format
+{
+	inherit GTK2.Hscale;
+	string format="%[2]f";
+	void create()
+	{
+		::create(GTK2.Adjustment());
+		signal_connect("format-value",format_value);
+		//signal_connect("change-value",change_value); //Uncomment to allow the user to drag the slider to seek. Has UI issues though.
+		//set_update_policy(GTK2.UPDATE_DISCONTINUOUS); //This would be ideal but doesn't seem to work. The setting appears to have been changed, but it has no effect on the messages sent.
+		unset_flags(GTK2.CanFocus);
+	}
+	string format_value(object self,float val)
+	{
+		int ival=(int)val;
+		int min=ival/60;
+		return sprintf(format,min/60,min%60,val%60);
+	}
+	this_program set_range(float min,float max)
+	{
+		::set_range(min,max);
+		if (max>3600.0) format="%d:%02d:%02.0f"; //h:mm:ss
+		else if (max>600.0) format="%[1]02d:%[2]04.1f"; //mm:ss.s
+		else if (max>60.0) format="%[1]d:%[2]05.2f"; //m:s.ss
+		else format="%[2]f";
+		format+=" / "+format_value(0,max);
+		return this;
+	}
+	float|int value_set=0; //The integer 0 means "not set"; the float 0.0 means "seek to beginning"
+	mixed timejumpcallout;
+	void timejump(float val) {value_set=val;}
+	int change_value(object self,int sig,float val)
+	{
+		if (floatp(value_set)) remove_call_out(timejumpcallout);
+		timejumpcallout=call_out(timejump,1.5,val);
+	}
+}
+
 mapping args;
 object alsa;
 object parser=(object)"playmidi.pike"; //Grab some utility functions. TODO: Put them into a proper module or something.
@@ -160,7 +198,7 @@ int main(int argc,array(string) argv)
 	mainwindow->add(table
 		->attach_defaults(status=GTK2.Label("status goes here")->set_size_request(-1,20)->set_alignment(0.0,0.0),0,5,0,1)
 		->attach(lyrics=GTK2.Label("lyrics go here")->set_line_wrap(1),0,5,17,18,GTK2.FILL,GTK2.FILL|GTK2.EXPAND,0,0)
-		->attach_defaults(position=GTK2.Hscale(GTK2.Adjustment())->unset_flags(GTK2.CanFocus),0,5,18,19)
+		->attach_defaults(position=TimeMarker(),0,5,18,19)
 		->attach_defaults(GTK2.HbuttonBox()
 			->add(Button("Play/pause",pause))
 			->add(Button("Stop",stop))
@@ -233,14 +271,22 @@ void playmidi(string fn)
 			break;
 		}
 	}
-	position->set_range(0,seconds); write("Total seconds: %f\n",seconds);
+	position->set_range(0,seconds);
 	sort(lyriccnt);
 	lyrtrack=256+lyriccnt[-1][-1]; //Last cell of the last array is the track number of the Chosen One. Offset by 256 to match ev[1] in the main loop.
 	if (evptr<sizeof(events)) {werror("WARNING: Less MIDI events (%d) than expected (%d)!\n",evptr,sizeof(events)); events=events[..evptr-1];}
 	//Second pass: Iterate strictly over the events, processing them.
 	abspos=0; seconds=0.0;
-	foreach (events,array(int|string) ev)
+	float jumpto=0.0;
+	for (evptr=0;evptr<sizeof(events) && !skiptrack;++evptr)
 	{
+		if (floatp(position->value_set))
+		{
+			jumpto=position->value_set; position->value_set=0;
+			evptr=0;
+			hush();
+		}
+		array(int|string) ev=events[evptr];
 		if (int firstev=ev[0]-abspos)
 		{
 			//write("Sleeping %d [%f]\n",firstev,firstev*time_division);
@@ -248,8 +294,8 @@ void playmidi(string fn)
 			{
 				//write("Tick %d/%d leaving %d\n",tick_per_beat-pos,firstev,firstev-(tick_per_beat-pos));
 				int wait=tick_per_beat-pos;
-				sleep(wait*time_division);
 				seconds+=wait*time_division;
+				if (seconds>=jumpto) sleep(wait*time_division);
 				firstev-=wait;
 				abspos+=wait;
 				pos=0; if (++beat==tsnum) {beat=0; ++bar;}
@@ -258,8 +304,8 @@ void playmidi(string fn)
 			if (firstev)
 			{
 				//write("Tick %d\n",firstev);
-				sleep(firstev*time_division);
 				seconds+=firstev*time_division;
+				if (seconds>=jumpto) sleep(firstev*time_division);
 				pos+=firstev;
 				abspos+=firstev;
 			}
@@ -274,7 +320,7 @@ void playmidi(string fn)
 				if (!muted[chan])
 				{
 					if (anysolo && !soloed[chan]) ev[3]=ev[3] && (ev[3]/4+1); //Ensure that a nonzero velocity stays nonzero (by adding 1); velocity 0 stays 0, though, as it represents note-off.
-					alsa->note_on(chan,ev[2],ev[3]);
+					if (seconds>=jumpto) alsa->note_on(chan,ev[2],ev[3]);
 				}
 				piano[chan]->set_note(ev[2],ev[3]);
 				break;
