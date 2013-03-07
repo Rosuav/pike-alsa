@@ -139,7 +139,7 @@ GTK2.ToggleButton toggle(int r,int g,int b,mixed ... onclick)
 //Helper function to create a button and attach an event
 GTK2.Button Button(string|mapping props,mixed ... onclick)
 {
-	GTK2.Button obj=GTK2.Button(props);
+	GTK2.Button obj=GTK2.Button(props)->unset_flags(GTK2.CanFocus);
 	obj->signal_connect("clicked",@onclick);
 	return obj;
 }
@@ -177,6 +177,9 @@ void stop()
 int skiptrack=0;
 void skip() {skiptrack=1;}
 
+int|float jumptarget=0;
+void jump(float dist) {jumptarget+=dist;}
+
 int main(int argc,array(string) argv)
 {
 	args=Arg.parse(argv);
@@ -202,13 +205,23 @@ int main(int argc,array(string) argv)
 		->attach_defaults(position=TimeMarker(),0,5,18,19)
 		->attach_defaults(GTK2.HbuttonBox()
 			->add(Button("Play/pause",pause))
-			->add(Button("Stop",stop))
+			->add(Button("Stop [Ctrl-Q]",stop))
 			->add(Button("Skip track",skip))
 		,0,5,19,20)
+	)->add_accel_group(GTK2.AccelGroup()
+		->connect('Q',4,0,stop,0)
+		->connect(' ',0,0,pause,0)
+		->connect(65363,1,0,jump, 10.0) //Are there constants somewhere for these? Shift+Right arrow...
+		->connect(65361,1,0,jump,-10.0) //... and left arrow.
+		->connect(65363,4,0,jump, 60.0) //Ditto with Ctrl
+		->connect(65361,4,0,jump,-60.0)
 	)->show_all();
+	//mainwindow->signal_connect("key_press_event",lambda(object self,GDK2.Event ev) {write("Key! %O\n",(mapping)ev);},0,"",1); //Uncomment to dump keys to the console - good for finding the key codes for the accelgroup above
 	midithrd=thread_create(playmidis);
 	return -1;
 }
+
+int sayargs(mixed ... args) {write("%O\n",args); return 1;}
 
 void playmidis() {foreach (args[Arg.REST],string fn) {playmidi(fn); hush(); alsa->reset(); alsa->wait(); sleep(1);} exit(0);}
 
@@ -281,10 +294,13 @@ void playmidi(string fn)
 	float jumpto=0.0;
 	for (evptr=0;evptr<sizeof(events) && !skiptrack;++evptr)
 	{
-		if (floatp(position->value_set))
+		write("%O        \r",jumptarget);
+		if (floatp(position->value_set) || floatp(jumptarget))
 		{
-			jumpto=position->value_set; position->value_set=0;
-			evptr=0;
+			if (floatp(jumptarget)) jumpto=seconds+jumptarget;
+			else jumpto=position->value_set;
+			position->value_set=jumptarget=0;
+			if (jumpto<seconds) {evptr=0; seconds=0.0;}
 			hush();
 		}
 		array(int|string) ev=events[evptr];
