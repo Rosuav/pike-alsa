@@ -132,7 +132,7 @@ void pause()
 }
 void stop()
 {
-	for (int i=0;i<16;++i) silence(i);
+	hush();
 	exit(0); //Or maybe not. I don't know.
 }
 int skiptrack=0;
@@ -193,7 +193,7 @@ void playmidi(string fn)
 	int abspos=0; //Absolute position, effectively bar+beat+pos
 	float seconds=0.0; //Absolute position as measured in seconds
 	string info=sprintf("%3d bpm, %d %d",bpm,tsnum,1<<tsdem);
-	function showstatus=lambda() {status->set_text(sprintf(" [%s] %d : %d %s\r",info,bar,beat,beat?"        ":"---     ")); position->set_value(seconds); while (paused) pausecond->wait(pausemtx->lock());};
+	function showstatus=lambda() {status->set_text(sprintf(" [%s] %d : %d %s\r",info,bar,beat,beat?"        ":"---     ")); position->set_value(seconds); while (paused) {hush(); pausecond->wait(pausemtx->lock());}};
 	int lyrtrack=-1;
 	int maxlyr=0;
 	array(int) chan=({-1})*sizeof(chunks); //Associate channel numbers with chunks, for the benefit of the track-name labels
