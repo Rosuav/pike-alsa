@@ -282,7 +282,7 @@ void playmidi(string fn)
 						else if (ly[-1]==' ') lyricsraw=1; //Some MIDI files have lyrics already parsed in this way, some don't. I don't know how I'm supposed to recognize which is which.
 						else ly+=" ";
 					}
-					lyrics->set_text(lyrictxt+=ly);
+					lyrics->set_text(lyrictxt=((lyrictxt+ly)/"\r")[<7..]*"\r");
 				}
 				break;
 			}
