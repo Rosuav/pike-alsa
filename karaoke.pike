@@ -135,6 +135,8 @@ void stop()
 	for (int i=0;i<16;++i) silence(i);
 	exit(0); //Or maybe not. I don't know.
 }
+int skiptrack=0;
+void skip() {skiptrack=1;}
 
 int main(int argc,array(string) argv)
 {
@@ -162,6 +164,7 @@ int main(int argc,array(string) argv)
 		->attach_defaults(GTK2.HbuttonBox()
 			->add(Button("Play/pause",pause))
 			->add(Button("Stop",stop))
+			->add(Button("Skip track",skip))
 		,0,5,19,20)
 	)->show_all();
 	midithrd=thread_create(playmidis);
@@ -172,6 +175,7 @@ void playmidis() {foreach (args[Arg.REST],string fn) {playmidi(fn); hush(); alsa
 
 void playmidi(string fn)
 {
+	skiptrack=0;
 	array(array(string|array(array(int|string)))) chunks=parsesmf(Stdio.read_file(fn));
 	lyrictxt="";
 	if (lyrics) {mainwindow->resize(1,1); lyrics->set_text(fn);}
@@ -188,18 +192,34 @@ void playmidi(string fn)
 	int bar=0,beat=0,pos=0,tick_per_beat=timediv,tick_per_bar=timediv*4;
 	int abspos=0; //Absolute position, effectively bar+beat+pos
 	string info=sprintf("%3d bpm, %d %d",bpm,tsnum,1<<tsdem);
-	function showstatus=lambda() {status->set_text(sprintf(" [%s] %d : %d %s\r",info,bar,beat,beat?"        ":"---     ")); position->set_value(abspos); while (paused) pausecond->wait(pausemtx->lock());};
+	function showstatus=lambda() {status->set_text(sprintf(" [%s] %d : %d %s\r",info,bar,beat,beat?"        ":"---     ")); position->set_value(abspos*time_division); while (paused) pausecond->wait(pausemtx->lock());};
 	int lyrtrack=-1;
-	int maxlen=0;
+	int maxlyr=0;
 	array(int) chan=({-1})*sizeof(chunks); //Associate channel numbers with chunks, for the benefit of the track-name labels
+	//First pass over the content: Flatten the chunks to a single stream of events.
+	int maxlen=0; float seconds=0;
 	foreach (chunks;int i;array chunk)
 	{
-		int len=0; foreach (chunk;int j;array ev) {len+=ev[0]; if (ev[1]<0xf0) chan[i]=ev[1]&15;}
-		if (len>maxlen) maxlen=len;
+		int len=0,lyr=0;
+		foreach (chunk;int j;array ev)
+		{
+			len+=ev[0]; if (len>maxlen) {seconds+=(len-maxlen)*time_division; maxlen=len;}
+			if (ev[1]<0xf0) chan[i]=ev[1]&15;
+			if (ev[1]==0xff) switch (ev[2])
+			{
+				case 0x05: ++lyr; break;
+				case 0x51:
+					sscanf(ev[3],"%3c",tempo);
+					time_division=tempo*.000001/timediv;
+					break;
+			}
+		}
+		if (lyr>maxlyr) {maxlyr=lyr; lyrtrack=i;} //Uncomment to take lyrics from only the track that has the most. This gives the best results in many cases.
 	}
-	position->set_range(0,maxlen);
+	position->set_range(0,seconds);
 	while (1)
 	{
+		if (skiptrack) break;
 		int firstev=1<<30,track=-1;
 		foreach (chunks;int i;array chunk) if (chunkptr[i]<sizeof(chunk))
 		{
