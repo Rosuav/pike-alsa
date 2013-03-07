@@ -128,6 +128,7 @@ Thread.Thread midithrd;
 GTK2.ToggleButton toggle(int r,int g,int b,mixed ... onclick)
 {
 	GTK2.ToggleButton obj=GTK2.ToggleButton()
+		->unset_flags(GTK2.CanFocus)
 		->modify_bg(GTK2.STATE_NORMAL,GTK2.GdkColor(r/2,g/2,b/2))
 		->modify_bg(GTK2.STATE_PRELIGHT,GTK2.GdkColor(r/2,g/2,b/2))
 		->modify_bg(GTK2.STATE_ACTIVE,GTK2.GdkColor(r,g,b));
