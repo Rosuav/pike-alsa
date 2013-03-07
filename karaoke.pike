@@ -159,7 +159,7 @@ int main(int argc,array(string) argv)
 	;
 	mainwindow->add(table
 		->attach_defaults(status=GTK2.Label("status goes here")->set_size_request(-1,20)->set_alignment(0.0,0.0),0,5,0,1)
-		->attach_defaults(lyrics=GTK2.Label("lyrics go here"),0,5,17,18)
+		->attach(lyrics=GTK2.Label("lyrics go here")->set_line_wrap(1),0,5,17,18,GTK2.FILL,GTK2.FILL|GTK2.EXPAND,0,0)
 		->attach_defaults(position=GTK2.Hscale(GTK2.Adjustment())->unset_flags(GTK2.CanFocus),0,5,18,19)
 		->attach_defaults(GTK2.HbuttonBox()
 			->add(Button("Play/pause",pause))
@@ -191,35 +191,17 @@ void playmidi(string fn)
 	int tsnum,tsdem,metronome,barlen;
 	int bar=0,beat=0,pos=0,tick_per_beat=timediv,tick_per_bar=timediv*4;
 	int abspos=0; //Absolute position, effectively bar+beat+pos
+	float seconds=0.0; //Absolute position as measured in seconds
 	string info=sprintf("%3d bpm, %d %d",bpm,tsnum,1<<tsdem);
-	function showstatus=lambda() {status->set_text(sprintf(" [%s] %d : %d %s\r",info,bar,beat,beat?"        ":"---     ")); position->set_value(abspos*time_division); while (paused) pausecond->wait(pausemtx->lock());};
+	function showstatus=lambda() {status->set_text(sprintf(" [%s] %d : %d %s\r",info,bar,beat,beat?"        ":"---     ")); position->set_value(seconds); while (paused) pausecond->wait(pausemtx->lock());};
 	int lyrtrack=-1;
 	int maxlyr=0;
 	array(int) chan=({-1})*sizeof(chunks); //Associate channel numbers with chunks, for the benefit of the track-name labels
+	array(array(int)) lyriccnt=allocate(sizeof(chunks),({0,0,0})); foreach (lyriccnt;int i;array l) l[-1]=i; //Count of lyric events in each track; and count of text events at non-zero position. Ties broken by track index.
 	//First pass over the content: Flatten the chunks to a single stream of events.
-	int maxlen=0; float seconds=0;
-	foreach (chunks;int i;array chunk)
-	{
-		int len=0,lyr=0;
-		foreach (chunk;int j;array ev)
-		{
-			len+=ev[0]; if (len>maxlen) {seconds+=(len-maxlen)*time_division; maxlen=len;}
-			if (ev[1]<0xf0) chan[i]=ev[1]&15;
-			if (ev[1]==0xff) switch (ev[2])
-			{
-				case 0x05: ++lyr; break;
-				case 0x51:
-					sscanf(ev[3],"%3c",tempo);
-					time_division=tempo*.000001/timediv;
-					break;
-			}
-		}
-		if (lyr>maxlyr) {maxlyr=lyr; lyrtrack=i;} //Uncomment to take lyrics from only the track that has the most. This gives the best results in many cases.
-	}
-	position->set_range(0,seconds);
+	array(array(int|string)) events=allocate(`+(@sizeof(chunks[*]))); int evptr=0;
 	while (1)
 	{
-		if (skiptrack) break;
 		int firstev=1<<30,track=-1;
 		foreach (chunks;int i;array chunk) if (chunkptr[i]<sizeof(chunk))
 		{
@@ -230,12 +212,44 @@ void playmidi(string fn)
 		if (firstev)
 		{
 			foreach (chunks;int i;array chunk) if (chunkptr[i]<sizeof(chunk)) chunk[chunkptr[i]][0]-=firstev;
+			abspos+=firstev;
+			seconds+=firstev*time_division;
+		}
+		array(int|string) ev=events[evptr++]=chunks[track][chunkptr[track]++];
+		ev[0]+=abspos;
+		switch (ev[1])
+		{
+			case 0x80..0xef: chan[track]=ev[1]&15; break;
+			case 0xff: ev[1]=256+track; switch (ev[2]) //Since a status byte cannot be >255, for obvious reasons, I can (ab)use the fact that ev[1] is a full-range integer and store the track number there. A few event types care about tracks.
+			{
+				case 0x2f: chunkptr[track]=sizeof(chunks[track]); break; //End of track, ignore any further events. Note that events so ignored will trigger the evptr<sizeof(events) warning message below.
+				case 0x05: ++lyriccnt[track][0]; break;
+				case 0x01: if (abspos) ++lyriccnt[track][1]; break; //Some files use type 01 for lyrics instead of type 05
+				case 0x51: //tempo = microseconds per quarter note
+					sscanf(ev[3],"%3c",tempo);
+					time_division=tempo*.000001/timediv;
+					break;
+			}
+			break;
+		}
+	}
+	position->set_range(0,seconds); write("Total seconds: %f\n",seconds);
+	sort(lyriccnt);
+	lyrtrack=256+lyriccnt[-1][-1]; //Last cell of the last array is the track number of the Chosen One. Offset by 256 to match ev[1] in the main loop.
+	if (evptr<sizeof(events)) {werror("WARNING: Less MIDI events (%d) than expected (%d)!\n",evptr,sizeof(events)); events=events[..evptr-1];}
+	//Second pass: Iterate strictly over the events, processing them.
+	abspos=0; seconds=0.0;
+	foreach (events,array(int|string) ev)
+	{
+		if (int firstev=ev[0]-abspos)
+		{
 			//write("Sleeping %d [%f]\n",firstev,firstev*time_division);
 			while (pos+firstev>=tick_per_beat)
 			{
 				//write("Tick %d/%d leaving %d\n",tick_per_beat-pos,firstev,firstev-(tick_per_beat-pos));
 				int wait=tick_per_beat-pos;
 				sleep(wait*time_division);
+				seconds+=wait*time_division;
 				firstev-=wait;
 				abspos+=wait;
 				pos=0; if (++beat==tsnum) {beat=0; ++bar;}
@@ -245,12 +259,12 @@ void playmidi(string fn)
 			{
 				//write("Tick %d\n",firstev);
 				sleep(firstev*time_division);
+				seconds+=firstev*time_division;
 				pos+=firstev;
 				abspos+=firstev;
 			}
 			showstatus();
 		}
-		array ev=chunks[track][chunkptr[track]++];
 		switch (ev[1])
 		{
 			case 0x80..0x8f: alsa->note_off(	ev[1]&0xf,ev[2],ev[3]); piano[ev[1]&15]->set_note(ev[2],0); break;
@@ -259,7 +273,7 @@ void playmidi(string fn)
 				int chan=ev[1]&15;
 				if (!muted[chan])
 				{
-					if (anysolo && !soloed[chan]) ev[3]=ev[3] && (ev[3]/4+1); //Ensure that a nonzero velocity stays nonzero
+					if (anysolo && !soloed[chan]) ev[3]=ev[3] && (ev[3]/4+1); //Ensure that a nonzero velocity stays nonzero (by adding 1); velocity 0 stays 0, though, as it represents note-off.
 					alsa->note_on(chan,ev[2],ev[3]);
 				}
 				piano[chan]->set_note(ev[2],ev[3]);
@@ -270,10 +284,10 @@ void playmidi(string fn)
 			case 0xc0..0xcf: alsa->prog_chg(	ev[1]&0xf,ev[2]); chanpatch[ev[1]&15]->set_text(ev[1]==0xc9?"Percussion":patchnames[ev[2]]); break;
 			case 0xd0..0xdf: alsa->chan_pressure(	ev[1]&0xf,ev[2]); break;
 			case 0xe0..0xef: alsa->pitch_bend(	ev[1]&0xf,(ev[2]|(ev[3]<<7))-0x2000); break;
-			case 0xff: switch (ev[2])
+			case 0x100..: switch (ev[2]) //Meta-event (normally 0xff)
 			{
-				case 0x03: //Track name
-					if (chan[track]>-1) channame[chan[track]]->set_text(ev[3]);
+				case 0x03: //Track name - probably will all happen at the beginning of time, but we'll handle them at any time
+					if (chan[ev[1]-256]>-1) channame[chan[ev[1]-256]]->set_text(ev[3]);
 					break;
 				case 0x04: //Instrument name (currently ignored, using the patch numbers instead)
 					break;
@@ -290,12 +304,10 @@ void playmidi(string fn)
 					tick_per_bar=tick_per_beat*tsnum;
 					info=sprintf("%3d bpm, %d %d",bpm,tsnum,1<<tsdem);
 					break;
-				case 0x2f: chunkptr[track]=sizeof(chunks[track]); break; //End of track. Ignore anything after it.
-				//case 0x01: //Show text elements as lyrics?
-				case 0x05: if (lyrics && (lyrtrack==track || lyrtrack==-1))
+				case 0x01: if (lyriccnt[-1][0]) break; //If there were no Lyric events (type 0x05), then the chunk with the most Text events will use those as lyrics.
+				case 0x05: if (lyrics && (lyrtrack==ev[1] || lyrtrack==-1))
 				{
 					string ly=ev[3];
-					lyrtrack=track; //Uncomment to take only the first track with lyrics in it; comment out to keep all lyrics (potentially interspersed).
 					if (!lyricsraw)
 					{
 						if (ly[-1]=='-') ly=ly[..<1];
