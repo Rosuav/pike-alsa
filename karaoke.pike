@@ -121,7 +121,6 @@ object parser=(object)"playmidi.pike"; //Grab some utility functions. TODO: Put 
 function parsesmf=parser->parsesmf;
 GTK2.Widget mainwindow,lyrics,status,position;
 array(GTK2.Widget) piano=allocate(16),channame=allocate(16),chanpatch=allocate(16);
-string lyrictxt="";
 Thread.Thread midithrd;
 
 //Helper function to build the toggle buttons. Half-brightness for unselected, full for selected.
@@ -201,7 +200,7 @@ int main(int argc,array(string) argv)
 	;
 	mainwindow->add(table
 		->attach_defaults(status=GTK2.Label("status goes here")->set_size_request(-1,20)->set_alignment(0.0,0.0),0,5,0,1)
-		->attach(lyrics=GTK2.Label("lyrics go here")->set_line_wrap(1),0,5,17,18,GTK2.FILL,GTK2.FILL|GTK2.EXPAND,0,0)
+		->attach(lyrics=GTK2.Label("lyrics go here")->set_line_wrap(1)->set_selectable(1)->unset_flags(GTK2.CanFocus),0,5,17,18,GTK2.FILL,GTK2.FILL|GTK2.EXPAND,0,0)
 		->attach_defaults(position=TimeMarker(),0,5,18,19)
 		->attach_defaults(GTK2.HbuttonBox()
 			->add(Button("Play/pause",pause))
@@ -229,8 +228,9 @@ void playmidi(string fn)
 {
 	skiptrack=0;
 	array(array(string|array(array(int|string)))) chunks=parsesmf(Stdio.read_file(fn));
-	lyrictxt="";
-	if (lyrics) {mainwindow->resize(1,1); lyrics->set_text(fn);}
+	array(string) lyrictxt=({""}); int lyricpos=0;
+	mainwindow->resize(1,1);
+	lyrics->set_text(fn);
 	int lyricsraw=0;
 	sscanf(chunks[0][1],"%2c%*2c%2c",int type,int timediv); //timediv == ticks per quarter note
 	//if (time_division&0x8000) //it's SMPTE timing?
@@ -287,14 +287,45 @@ void playmidi(string fn)
 	}
 	position->set_range(0,seconds);
 	sort(lyriccnt);
-	lyrtrack=256+lyriccnt[-1][-1]; //Last cell of the last array is the track number of the Chosen One. Offset by 256 to match ev[1] in the main loop.
+	lyrtrack=256+lyriccnt[-1][-1]; //Last cell of the last array is the track number of the Chosen One. Offset by 256 to match ev[1] in the main loop. Comment this out to keep all lyric events from all tracks (potentially interleaved).
 	if (evptr<sizeof(events)) {werror("WARNING: Less MIDI events (%d) than expected (%d)!\n",evptr,sizeof(events)); events=events[..evptr-1];}
-	//Second pass: Iterate strictly over the events, processing them.
+	//Second pass: Process lyric events into a more Karaoke-friendly form.
+	//We collect up lines. There's a "first line" which will be displayed on playback start, and then each event with a \r in it will carry with it the next line.
+	//Also, if there are too many lyric events without a \r, one will be inserted.
+	//Finally, the lyric events themselves become "advance by N characters".
+	array firstline=({0,0xFF,0x05,({0,""})}),curline=firstline; int cnt;
+	foreach (events,array(int|string|array(int|string)) ev) if (ev[1]>=0xff && (ev[2]==0x05 || (lyriccnt[-1][0] && ev[2]==0x01 && ev[0])) && (lyrtrack==ev[1] || lyrtrack==-1))
+	{
+		ev[2]=0x05;
+		string ly=ev[3];
+		if (!lyricsraw)
+		{
+			if (ly[-1]=='-') ly=ly[..<1];
+			else if (ly[-1]==' ') lyricsraw=1; //Some MIDI files have lyrics already parsed in this way, some don't. I don't know how I'm supposed to recognize which is which.
+			else ly+=" ";
+		}
+		if (has_value(ly,'\r') || ++cnt>10)
+		{
+			//New line! Alright!
+			cnt=0;
+			sscanf(ly,"%s\r%s",string before,ly); //I'm guessing one of these will be blank, but hey, may as well support the \r being anywhere in the string
+			curline[3][1]+=before||"";
+			//write("%d %q\n",@curline[3]);
+			curline=ev;
+			ev[3]=({sizeof(ly)+1,"\r"});
+		}
+		else ev[3]=({sizeof(ly),0});
+		//write("%O\n",curline);
+		curline[3][1]+=ly;
+	}
+	if (firstline[3][1]!="") lyrics->set_text(lyrictxt[0]=firstline[3][1]);
+	//foreach (events,array(int|string|array) ev) if (sizeof(ev)>3 && arrayp(ev[3])) write("Event! %d -> %q\n",ev[3][0],ev[3][1] || "--"); return;
+	//Final pass: Iterate strictly over the events, processing them.
 	abspos=0; seconds=0.0;
 	float jumpto=0.0;
 	for (evptr=0;evptr<sizeof(events) && !skiptrack;++evptr)
 	{
-		write("%O        \r",jumptarget);
+		//write("%O        \r",jumptarget);
 		if (floatp(position->value_set) || floatp(jumptarget))
 		{
 			if (floatp(jumptarget)) jumpto=seconds+jumptarget;
@@ -367,17 +398,19 @@ void playmidi(string fn)
 					tick_per_bar=tick_per_beat*tsnum;
 					info=sprintf("%3d bpm, %d %d",bpm,tsnum,1<<tsdem);
 					break;
-				case 0x01: if (lyriccnt[-1][0]) break; //If there were no Lyric events (type 0x05), then the chunk with the most Text events will use those as lyrics.
-				case 0x05: if (lyrics && (lyrtrack==ev[1] || lyrtrack==-1))
+				case 0x05: if (arrayp(ev[3]))
 				{
-					string ly=ev[3];
-					if (!lyricsraw)
+					if (ev[3][1])
 					{
-						if (ly[-1]=='-') ly=ly[..<1];
-						else if (ly[-1]==' ') lyricsraw=1; //Some MIDI files have lyrics already parsed in this way, some don't. I don't know how I'm supposed to recognize which is which.
-						else ly+=" ";
+						lyrictxt+=({ev[3][1]});
+						while (sizeof(lyrictxt)>8)
+						{
+							lyricpos-=sizeof(lyrictxt[0]);
+							lyrictxt=lyrictxt[1..];
+						}
+						lyrics->set_text(lyrictxt*"");
 					}
-					lyrics->set_text(lyrictxt=((lyrictxt+ly)/"\r")[<7..]*"\r");
+					lyrics->select_region(0,lyricpos+=ev[3][0]);
 				}
 				break;
 			}
