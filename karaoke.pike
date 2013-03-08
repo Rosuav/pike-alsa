@@ -331,8 +331,9 @@ void playmidi(string fn)
 			if (floatp(jumptarget)) jumpto=seconds+jumptarget;
 			else jumpto=position->value_set;
 			position->value_set=jumptarget=0;
-			if (jumpto<seconds) {evptr=0; seconds=0.0;}
+			if (jumpto<seconds) {evptr=0; seconds=0.0; abspos=0; lyrictxt=({firstline[3][1]}); lyricpos=0; lyrics->set_text(firstline[3][1])->select_region(0,0);}
 			hush();
+			continue;
 		}
 		array(int|string) ev=events[evptr];
 		if (int firstev=ev[0]-abspos)
