@@ -286,18 +286,24 @@ void playmidi(string fn)
 		}
 	}
 	position->set_range(0,seconds);
-	sort(lyriccnt);
-	lyrtrack=256+lyriccnt[-1][-1]; //Last cell of the last array is the track number of the Chosen One. Offset by 256 to match ev[1] in the main loop. Comment this out to keep all lyric events from all tracks (potentially interleaved).
+	string lyricinfo=sort((array(string))lyriccnt)[-1]; //Note: Sort as strings to ensure that subsequent array elements affect the sort (which they don't when arrays are sorted)
+	lyrtrack=256+lyricinfo[-1]; //Last cell of the last array is the track number of the Chosen One. Offset by 256 to match ev[1] in the main loop. Comment this out to keep all lyric events from all tracks (potentially interleaved).
 	if (evptr<sizeof(events)) {werror("WARNING: Less MIDI events (%d) than expected (%d)!\n",evptr,sizeof(events)); events=events[..evptr-1];}
 	//Second pass: Process lyric events into a more Karaoke-friendly form.
 	//We collect up lines. There's a "first line" which will be displayed on playback start, and then each event with a \r in it will carry with it the next line.
 	//Also, if there are too many lyric events without a \r, one will be inserted.
 	//Finally, the lyric events themselves become "advance by N characters".
 	array firstline=({0,0xFF,0x05,({0,""})}),curline=firstline; int cnt;
-	foreach (events,array(int|string|array(int|string)) ev) if (ev[1]>=0xff && (ev[2]==0x05 || (lyriccnt[-1][0] && ev[2]==0x01 && ev[0])) && (lyrtrack==ev[1] || lyrtrack==-1))
+	foreach (events,array(int|string|array(int|string)) ev) if (ev[1]>=0xff && (ev[2]==0x05 || (!lyricinfo[0] && ev[2]==0x01 && ev[0])) && (lyrtrack==ev[1] || lyrtrack==-1))
 	{
-		ev[2]=0x05;
 		string ly=ev[3];
+		if (ev[2]==1)
+		{
+			//Text elements start with a slash or backslash to represent paragraphs
+			ev[2]=0x05;
+			if (ly[0]=='/' || ly[0]=='\\') ly[0]='\r';
+			lyricsraw=1;
+		}
 		if (!lyricsraw)
 		{
 			if (ly[-1]=='-') ly=ly[..<1];
