@@ -227,7 +227,8 @@ void playmidis() {foreach (args[Arg.REST],string fn) {playmidi(fn); hush(); alsa
 void playmidi(string fn)
 {
 	skiptrack=0;
-	array(array(string|array(array(int|string)))) chunks=parsesmf(Stdio.read_file(fn));
+	string data=Stdio.read_file(fn); if (!data) {write("Unable to read %s\n",fn); return;}
+	array(array(string|array(array(int|string)))) chunks=parsesmf(data);
 	array(string) lyrictxt=({""}); int lyricpos=0;
 	mainwindow->resize(1,1);
 	lyrics->set_text(fn);
