@@ -245,7 +245,8 @@ void playmidi(string fn)
 	int abspos=0; //Absolute position, effectively bar+beat+pos
 	float seconds=0.0; //Absolute position as measured in seconds
 	string info=sprintf("%3d bpm, %d %d",bpm,tsnum,1<<tsdem);
-	function showstatus=lambda() {status->set_text(sprintf(" [%s] %d : %d %s\r",info,bar,beat,beat?"        ":"---     ")); position->set_value(seconds); while (paused) {hush(); pausecond->wait(pausemtx->lock());}};
+	int seeking=0;
+	function showstatus=lambda() {if (!seeking) {status->set_text(sprintf(" [%s] %d : %d %s\r",info,bar,beat,beat?"        ":"---     ")); position->set_value(seconds); while (paused) {hush(); pausecond->wait(pausemtx->lock());}}};
 	int lyrtrack=-1;
 	int maxlyr=0;
 	array(int) chan=({-1})*sizeof(chunks); //Associate channel numbers with chunks, for the benefit of the track-name labels
@@ -331,14 +332,25 @@ void playmidi(string fn)
 	float jumpto=0.0;
 	for (evptr=0;evptr<sizeof(events) && !skiptrack;++evptr)
 	{
+		if (seeking && seconds>=jumpto)
+		{
+			seeking=0; mainwindow->thaw_child_notify();
+			lyrics->set_text(lyrictxt*""); lyrics->select_region(0,lyricpos);
+			showstatus();
+		}
 		//write("%O        \r",jumptarget);
 		if (floatp(position->value_set) || floatp(jumptarget))
 		{
 			if (floatp(jumptarget)) jumpto=seconds+jumptarget;
 			else jumpto=position->value_set;
 			position->value_set=jumptarget=0;
-			if (jumpto<seconds) {evptr=0; seconds=0.0; abspos=0; lyrictxt=({firstline[3][1]}); lyricpos=0; lyrics->set_text(firstline[3][1])->select_region(0,0);}
+			if (jumpto<seconds) //We've moved backwards. Restart, and seek to the beginning of the track.
+			{
+				evptr=0; seconds=0.0; abspos=0;
+				lyrictxt=({firstline[3][1]}); lyricpos=0; lyrics->set_text(firstline[3][1])->select_region(0,0);
+			}
 			hush();
+			seeking=1; mainwindow->freeze_child_notify();
 			continue;
 		}
 		array(int|string) ev=events[evptr];
@@ -350,7 +362,7 @@ void playmidi(string fn)
 				//write("Tick %d/%d leaving %d\n",tick_per_beat-pos,firstev,firstev-(tick_per_beat-pos));
 				int wait=tick_per_beat-pos;
 				seconds+=wait*time_division;
-				if (seconds>=jumpto) sleep(wait*time_division);
+				if (!seeking) sleep(wait*time_division);
 				firstev-=wait;
 				abspos+=wait;
 				pos=0; if (++beat==tsnum) {beat=0; ++bar;}
@@ -360,7 +372,7 @@ void playmidi(string fn)
 			{
 				//write("Tick %d\n",firstev);
 				seconds+=firstev*time_division;
-				if (seconds>=jumpto) sleep(firstev*time_division);
+				if (!seeking) sleep(firstev*time_division);
 				pos+=firstev;
 				abspos+=firstev;
 			}
@@ -369,13 +381,13 @@ void playmidi(string fn)
 		switch (ev[1])
 		{
 			case 0x80..0x8f: alsa->note_off(	ev[1]&0xf,ev[2],ev[3]); piano[ev[1]&15]->set_note(ev[2],0); break;
-			case 0x90..0x9f: //alsa->note_on(	ev[1]&0xf,ev[2],ev[3]); piano[ev[1]&15]->set_note(ev[2],ev[3]); break;
+			case 0x90..0x9f: if (!seeking)
 			{
 				int chan=ev[1]&15;
 				if (!muted[chan])
 				{
 					if (anysolo && !soloed[chan]) ev[3]=ev[3] && (ev[3]/4+1); //Ensure that a nonzero velocity stays nonzero (by adding 1); velocity 0 stays 0, though, as it represents note-off.
-					if (seconds>=jumpto) alsa->note_on(chan,ev[2],ev[3]);
+					alsa->note_on(chan,ev[2],ev[3]);
 				}
 				piano[chan]->set_note(ev[2],ev[3]);
 				break;
@@ -415,9 +427,10 @@ void playmidi(string fn)
 							lyricpos-=sizeof(lyrictxt[0]);
 							lyrictxt=lyrictxt[1..];
 						}
-						lyrics->set_text(lyrictxt*"");
+						if (!seeking) lyrics->set_text(lyrictxt*"");
 					}
-					lyrics->select_region(0,lyricpos+=ev[3][0]);
+					lyricpos+=ev[3][0];
+					if (!seeking) lyrics->select_region(0,lyricpos);
 				}
 				break;
 			}
