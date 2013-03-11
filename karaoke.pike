@@ -228,7 +228,13 @@ int main(int argc,array(string) argv)
 
 int sayargs(mixed ... args) {write("%O\n",args); return 1;}
 
-void playmidis() {foreach (args[Arg.REST],string fn) {playmidi(fn); hush(); alsa->reset(); alsa->wait(); sleep(1);} exit(0);}
+void reset()
+{
+	for (int i=0;i<16;++i) {channame[i]->set_text(""); chanpatch[i]->set_text("");}
+	hush(); alsa->reset(); alsa->wait();
+}
+
+void playmidis() {foreach (args[Arg.REST],string fn) {playmidi(fn); sleep(1);} exit(0);}
 
 void playmidi(string fn)
 {
@@ -338,6 +344,7 @@ void playmidi(string fn)
 	abspos=0; seconds=0.0;
 	float jumpto=0.0;
 	showstatus();
+	reset();
 	for (evptr=0;evptr<sizeof(events) && !skiptrack;++evptr)
 	{
 		if (seeking && seconds>=jumpto)
@@ -354,6 +361,7 @@ void playmidi(string fn)
 			position->value_set=jumptarget=0;
 			if (jumpto<seconds) //We've moved backwards. Restart, and seek to the beginning of the track.
 			{
+				reset();
 				evptr=0; seconds=0.0; abspos=0;
 				lyrictxt=({firstline[3][1]}); lyricpos=0; lyrics->set_text(firstline[3][1])->select_region(0,0);
 			}
