@@ -13,6 +13,7 @@ array(int|string) getvarlen(string data)
 array(array(string|array(array(int|string)))) parsesmf(string data)
 {
 	sscanf(data,"%{%4s%4H%}",array(array(string|array(array(int|string)))) chunks); //Now *that's* a REAL variable declaration. Hehe! :)
+	if (!chunks || !sizeof(chunks) || chunks[0][0]!="MThd") return 0; //Not a valid MIDI file
 	foreach (chunks,array(string|array(array(int|string))) chunk)
 	{
 		if (chunk[0]!="MTrk") continue;

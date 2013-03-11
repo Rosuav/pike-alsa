@@ -239,8 +239,9 @@ void playmidis() {foreach (args[Arg.REST],string fn) {playmidi(fn); sleep(1);} e
 void playmidi(string fn)
 {
 	skiptrack=0;
-	string data=Stdio.read_file(fn); if (!data) {write("Unable to read %s\n",fn); return;}
-	array(array(string|array(array(int|string)))) chunks=parsesmf(data);
+	string data; if (mixed ex=catch {data=Stdio.read_file(fn);}) {write("%s\n",describe_backtrace(ex)); return;}
+	if (!data) {write("Unable to read %s\n",fn); return;}
+	array(array(string|array(array(int|string)))) chunks=parsesmf(data); if (!chunks) {write("Unable to parse %s (not a standard MIDI file?)\n",fn); return;}
 	int lyricpos=0,curlyricline=0;
 	constant lyricbefore=4,lyricafter=3; //There'll be X lyric lines that have been sung, one that's being sung, and Y that haven't been, shown in the current display.
 	mainwindow->resize(1,1);
