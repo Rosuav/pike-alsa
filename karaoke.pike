@@ -179,6 +179,11 @@ void skip() {skiptrack=1;}
 int|float jumptarget=0;
 void jump(float dist) {jumptarget+=dist;}
 
+void notesoff()
+{
+	for (int i=0;i<16;++i) for (int note=0;note<128;++note) alsa->note_off(i,note,64);
+}
+
 int main(int argc,array(string) argv)
 {
 	args=Arg.parse(argv);
@@ -205,6 +210,7 @@ int main(int argc,array(string) argv)
 		->attach_defaults(GTK2.HbuttonBox()
 			->add(Button("Play/pause",pause))
 			->add(Button("Stop [Ctrl-Q]",stop))
+			->add(Button("Silence all",notesoff))
 			->add(Button("Skip track",skip))
 		,0,5,19,20)
 	)->add_accel_group(GTK2.AccelGroup()
@@ -331,6 +337,7 @@ void playmidi(string fn)
 	//Final pass: Iterate strictly over the events, processing them.
 	abspos=0; seconds=0.0;
 	float jumpto=0.0;
+	showstatus();
 	for (evptr=0;evptr<sizeof(events) && !skiptrack;++evptr)
 	{
 		if (seeking && seconds>=jumpto)
