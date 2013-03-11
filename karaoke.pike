@@ -315,15 +315,14 @@ void playmidi(string fn)
 		string ly=ev[3];
 		if (ev[2]==1)
 		{
-			//Text elements start with a slash or backslash to represent paragraphs
 			ev[2]=0x05;
-			if (ly[0]=='/' || ly[0]=='\\') ly[0]='\r';
-			lyricsraw=1;
+			lyricsraw=1; //Text elements always seem to be in raw mode
 		}
+		if (ly[0]=='/' || ly[0]=='\\') ly[0]='\r'; //Text elements, and lyric elements from some buggy generators, start with a slash or backslash to represent paragraphs instead of \r or \r\n
 		if (!lyricsraw)
 		{
 			if (ly[-1]=='-') ly=ly[..<1];
-			else if (ly[-1]==' ') lyricsraw=1; //Some MIDI files have lyrics already parsed in this way, some don't. I don't know how I'm supposed to recognize which is which.
+			else if (ly[0]==' ' || ly[-1]==' ') lyricsraw=1; //Some MIDI files have lyrics already parsed in this way, some don't. I don't know how I'm supposed to recognize which is which.
 			else ly+=" ";
 		}
 		if (has_value(ly,'\r') || sizeof(lyriclines[-1]+ly)>80) //Cut short before we hit 80 chars... TODO: break it at a space, somehow, if possible. But this shouldn't normally happen anyway - most karaoke files have proper newlines.
