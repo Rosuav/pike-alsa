@@ -241,7 +241,8 @@ void playmidi(string fn)
 	skiptrack=0;
 	string data=Stdio.read_file(fn); if (!data) {write("Unable to read %s\n",fn); return;}
 	array(array(string|array(array(int|string)))) chunks=parsesmf(data);
-	array(string) lyrictxt=({""}); int lyricpos=0;
+	int lyricpos=0,curlyricline=0;
+	constant lyricbefore=4,lyricafter=3; //There'll be X lyric lines that have been sung, one that's being sung, and Y that haven't been, shown in the current display.
 	mainwindow->resize(1,1);
 	lyrics->set_text(fn);
 	int lyricsraw=0;
@@ -304,10 +305,10 @@ void playmidi(string fn)
 	lyrtrack=256+lyricinfo[-1]; //Last cell of the last array is the track number of the Chosen One. Offset by 256 to match ev[1] in the main loop. Comment this out to keep all lyric events from all tracks (potentially interleaved).
 	if (evptr<sizeof(events)) {werror("WARNING: Less MIDI events (%d) than expected (%d)!\n",evptr,sizeof(events)); events=events[..evptr-1];}
 	//Second pass: Process lyric events into a more Karaoke-friendly form.
-	//We collect up lines. There's a "first line" which will be displayed on playback start, and then each event with a \r in it will carry with it the next line.
+	//We collect up lines. Each event with a \r in it will start the next line.
 	//Also, if there are too many lyric events without a \r, one will be inserted.
-	//Finally, the lyric events themselves become "advance by N characters".
-	array firstline=({0,0xFF,0x05,({0,""})}),curline=firstline; int cnt;
+	//Finally, the lyric events themselves become "advance by N characters" and possibly "show next line". This is rendered by an integer; if >65536, advance line, then advance pointer by the low word.
+	array(string) lyriclines=({""});
 	foreach (events,array(int|string|array(int|string)) ev) if (ev[1]>=0xff && (ev[2]==0x05 || (!lyricinfo[0] && ev[2]==0x01 && ev[0])) && (lyrtrack==ev[1] || lyrtrack==-1))
 	{
 		string ly=ev[3];
@@ -324,23 +325,19 @@ void playmidi(string fn)
 			else if (ly[-1]==' ') lyricsraw=1; //Some MIDI files have lyrics already parsed in this way, some don't. I don't know how I'm supposed to recognize which is which.
 			else ly+=" ";
 		}
-		if (has_value(ly,'\r') || ++cnt>10)
+		if (has_value(ly,'\r') || sizeof(lyriclines[-1]+ly)>80) //Cut short before we hit 80 chars... TODO: break it at a space, somehow, if possible. But this shouldn't normally happen anyway - most karaoke files have proper newlines.
 		{
-			//New line! Alright!
-			cnt=0;
-			sscanf(ly,"%s\r%s",string before,ly); //I'm guessing one of these will be blank, but hey, may as well support the \r being anywhere in the string
-			curline[3][1]+=before||"";
-			//write("%d %q\n",@curline[3]);
-			curline=ev;
-			ev[3]=({sizeof(ly)+1,"\r"});
+			//New line! Alright! Note that if the current lyric event would push us past the 80-character limit but it has a carriage return at the end of it, the line will actually be permitted to exceed the limit. It's not a perfectly hard limit.
+			sscanf(ly,"%s\r%s",string before,ly); //One of these will usually be blank, but hey, may as well support the \r being anywhere in the string
+			lyriclines[-1]+=before||"";
+			lyriclines+=({""});
+			ev[3]=sizeof(ly)|65536;
 		}
-		else ev[3]=({sizeof(ly),0});
-		//write("%O\n",curline);
-		curline[3][1]+=ly;
+		else ev[3]=sizeof(ly);
+		lyriclines[-1]+=ly;
 	}
-	if (firstline[3][1]!="") lyrics->set_text(lyrictxt[0]=firstline[3][1]);
-	//foreach (events,array(int|string|array) ev) if (sizeof(ev)>3 && arrayp(ev[3])) write("Event! %d -> %q\n",ev[3][0],ev[3][1] || "--"); return;
-	//Final pass: Iterate strictly over the events, processing them.
+	if (lyriclines[0]!="") lyrics->set_text(lyriclines[..lyricbefore+lyricafter]*"\r");
+	//Final pass: Iterate strictly over the events, processing them. This is where time is actually spent (everything above is initialization).
 	abspos=0; seconds=0.0;
 	float jumpto=0.0;
 	showstatus();
@@ -350,10 +347,9 @@ void playmidi(string fn)
 		if (seeking && seconds>=jumpto)
 		{
 			seeking=0; mainwindow->thaw_child_notify();
-			lyrics->set_text(lyrictxt*""); lyrics->select_region(0,lyricpos);
+			lyrics->set_text(lyriclines[max(curlyricline,lyricbefore)-lyricbefore..max(curlyricline,lyricbefore)+lyricafter]*"\r"); lyrics->select_region(0,lyricpos);
 			showstatus();
 		}
-		//write("%O        \r",jumptarget);
 		if (floatp(position->value_set) || floatp(jumptarget))
 		{
 			if (floatp(jumptarget)) jumpto=seconds+jumptarget;
@@ -363,7 +359,7 @@ void playmidi(string fn)
 			{
 				reset();
 				evptr=0; seconds=0.0; abspos=0;
-				lyrictxt=({firstline[3][1]}); lyricpos=0; lyrics->set_text(firstline[3][1])->select_region(0,0);
+				lyricpos=curlyricline=0; lyrics->set_text(lyriclines[..lyricbefore+lyricafter]*"\r")->select_region(0,0);
 			}
 			hush();
 			seeking=1; mainwindow->freeze_child_notify();
@@ -433,19 +429,16 @@ void playmidi(string fn)
 					tick_per_bar=tick_per_beat*tsnum;
 					info=sprintf("%3d bpm, %d %d",bpm,tsnum,1<<tsdem);
 					break;
-				case 0x05: if (arrayp(ev[3]))
+				case 0x05: if (intp(ev[3]))
 				{
-					if (ev[3][1])
+					if (ev[3]&65536)
 					{
-						lyrictxt+=({ev[3][1]});
-						while (sizeof(lyrictxt)>8)
-						{
-							lyricpos-=sizeof(lyrictxt[0]);
-							lyrictxt=lyrictxt[1..];
-						}
-						if (!seeking) lyrics->set_text(lyrictxt*"");
+						++curlyricline;
+						if (curlyricline>lyricbefore) lyricpos-=sizeof(lyriclines[curlyricline-lyricbefore-1]);
+						else ++lyricpos; //To count the \r
+						lyrics->set_text(lyriclines[max(curlyricline,lyricbefore)-lyricbefore..max(curlyricline,lyricbefore)+lyricafter]*"\r");
 					}
-					lyricpos+=ev[3][0];
+					lyricpos+=ev[3]&65535;
 					if (!seeking) lyrics->select_region(0,lyricpos);
 				}
 				break;
