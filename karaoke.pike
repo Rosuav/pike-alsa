@@ -205,7 +205,7 @@ int main(int argc,array(string) argv)
 	;
 	mainwindow->add(table
 		->attach_defaults(status=GTK2.Label("status goes here")->set_size_request(-1,20)->set_alignment(0.0,0.0),0,5,0,1)
-		->attach(lyrics=GTK2.Label("lyrics go here")->set_line_wrap(1)->set_selectable(1)->unset_flags(GTK2.CanFocus),0,5,17,18,GTK2.FILL,GTK2.FILL|GTK2.EXPAND,0,0)
+		->attach_defaults(lyrics=GTK2.Label("lyrics go here")->set_selectable(1)->unset_flags(GTK2.CanFocus),0,5,17,18)
 		->attach_defaults(position=TimeMarker(),0,5,18,19)
 		->attach_defaults(GTK2.HbuttonBox()
 			->add(Button("Play/pause",pause))
