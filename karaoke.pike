@@ -226,7 +226,7 @@ int main(int argc,array(string) argv)
 		->connect(65361,1,0,jump,-10.0) //... and left arrow.
 		->connect(65363,4,0,jump, 60.0) //Ditto with Ctrl
 		->connect(65361,4,0,jump,-60.0)
-	)->show_all();
+	)->show_all()->signal_connect("delete_event",stop);
 	//mainwindow->signal_connect("key_press_event",lambda(object self,GDK2.Event ev) {write("Key! %O\n",(mapping)ev);},0,"",1); //Uncomment to dump keys to the console - good for finding the key codes for the accelgroup above
 	midithrd=thread_create(playmidis);
 	return -1;
