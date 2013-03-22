@@ -186,6 +186,13 @@ void notesoff()
 	for (int i=0;i<16;++i) for (int note=0;note<128;++note) alsa->note_off(i,note,64);
 }
 
+string dblclktarget; //If not null, will be skipped to. For some reason retaining the actual GTK2.TreePath object segfaults Pike, so I'm retaining it in string form and recreating it in the other thread.
+void playlistdblclk(GTK2.TreeView view,GTK2.TreePath path,GTK2.TreeViewColumn col,mixed arg)
+{
+	dblclktarget=path->to_string();
+	skiptrack=1;
+}
+
 int main(int argc,array(string) argv)
 {
 	args=Arg.parse(argv);
@@ -228,6 +235,7 @@ int main(int argc,array(string) argv)
 		->connect(65361,4,0,jump,-60.0)
 	)->show_all()->signal_connect("delete_event",stop);
 	//mainwindow->signal_connect("key_press_event",lambda(object self,GDK2.Event ev) {write("Key! %O\n",(mapping)ev);},0,"",1); //Uncomment to dump keys to the console - good for finding the key codes for the accelgroup above
+	playlistview->signal_connect("row_activated",playlistdblclk);
 	midithrd=thread_create(playmidis);
 	return -1;
 }
@@ -242,10 +250,12 @@ void reset()
 
 //Advance to the next node as though the down arrow were pressed. (Is there a way to do this directly?)
 //Steps into a node's children if there are any; at the end of the current line of children, steps up and keeps going.
-//Returns 0 at end of list, otherwise returns a valid path (which will be the argument, mutated, if one was passed).
+//Returns 0 at end of list, otherwise returns a valid path (which will normally be the argument, mutated, if one was passed, but don't rely on that).
+//A dblclktarget goal overrides the inputted path.
 GTK2.TreePath next(GTK2.TreePath|void path)
 {
-	if (path) while (!playliststore->get_iter(path->next())) {path->up(); if (!path->get_depth()) return 0;}
+	if (dblclktarget) {path=GTK2.TreePath(dblclktarget); dblclktarget=0;}
+	else if (path) while (!playliststore->get_iter(path->next())) {path->up(); if (!path->get_depth()) return 0;}
 	else path=GTK2.TreePath();
 	while (playliststore->iter_has_child(playliststore->get_iter(path))) path->down();
 	return path;
@@ -264,7 +274,7 @@ void playmidis()
 		foreach (ind[1..],int idx) info=info->children[idx];
 		playmidi(info); reset();
 		if (zero_type(info->delay)) sleep(1); else sleep(info->delay);
-	} while (next(path));
+	} while (path=next(path));
 	exit(0);
 }
 
