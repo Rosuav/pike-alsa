@@ -119,9 +119,11 @@ mapping args;
 object alsa;
 object parser=(object)"playmidi.pike"; //Grab some utility functions. TODO: Put them into a proper module or something.
 function parsesmf=parser->parsesmf;
-GTK2.Widget mainwindow,lyrics,status,position;
+GTK2.Widget mainwindow,lyrics,status,position,playlistview;
+GTK2.TreeStore playliststore;
 array(GTK2.Widget) piano=allocate(16),channame=allocate(16),chanpatch=allocate(16);
 Thread.Thread midithrd;
+array(mapping(string:mixed)) playlist=({ }); //Note that I can't store arbitrary Pike objects (like mappings) in the GTK2.TreeStore, so I have to maintain the rest of the content elsewhere.
 
 //Helper function to build the toggle buttons. Half-brightness for unselected, full for selected.
 GTK2.ToggleButton toggle(int r,int g,int b,mixed ... onclick)
@@ -195,24 +197,28 @@ int main(int argc,array(string) argv)
 	GTK2.setup_gtk();
 	mainwindow=GTK2.Window(GTK2.WindowToplevel);
 	mainwindow->set_title("Pi-karao-ke Display");
-	GTK2.Table table=GTK2.Table(0,0,0)->set_col_spacings(5)->set_row_spacings(5);
+	GTK2.Table table=GTK2.Table(0,0,0)->set_col_spacings(5)->set_row_spacings(5)->attach_defaults(
+		GTK2.ScrolledWindow((["hscrollbar-policy":GTK2.POLICY_AUTOMATIC,"vscrollbar-policy":GTK2.POLICY_AUTOMATIC]))->set_size_request(200,-1)->add(
+			playlistview=GTK2.TreeView(playliststore=GTK2.TreeStore(({"string"})))->set_headers_visible(0)->append_column(GTK2.TreeViewColumn("",GTK2.CellRendererText(),"text",0)) //TODO: Subclass CellRendererText and make one that acknowledges the invalid status (so, give it the whole mapping)
+		)
+	,0,1,0,17);
 	for (int i=0;i<sizeof(piano);++i) table
-		->attach_defaults(channame[i] =GTK2.Label()->set_alignment(0.0,0.5),	0,1,i+1,i+2)
-		->attach_defaults(chanpatch[i]=GTK2.Label()->set_alignment(1.0,0.5),	1,2,i+1,i+2)
-		->attach_defaults(piano[i]=PianoKeyboard(),				2,3,i+1,i+2)
-		->attach_defaults(toggle(255,0,0,mute,i),				3,4,i+1,i+2)
-		->attach_defaults(toggle(0,255,255,solo,i),				4,5,i+1,i+2)
+		->attach_defaults(channame[i] =GTK2.Label()->set_alignment(0.0,0.5),	1,2,i+1,i+2)
+		->attach_defaults(chanpatch[i]=GTK2.Label()->set_alignment(1.0,0.5),	2,3,i+1,i+2)
+		->attach_defaults(piano[i]=PianoKeyboard(),				3,4,i+1,i+2)
+		->attach_defaults(toggle(255,0,0,mute,i),				4,5,i+1,i+2)
+		->attach_defaults(toggle(0,255,255,solo,i),				5,6,i+1,i+2)
 	;
 	mainwindow->add(table
-		->attach_defaults(status=GTK2.Label("status goes here")->set_size_request(-1,20)->set_alignment(0.0,0.0),0,5,0,1)
-		->attach_defaults(lyrics=GTK2.Label("lyrics go here")->set_selectable(1)->unset_flags(GTK2.CanFocus),0,5,17,18)
-		->attach_defaults(position=TimeMarker(),0,5,18,19)
+		->attach_defaults(status=GTK2.Label("status goes here")->set_size_request(-1,20)->set_alignment(0.0,0.0),1,6,0,1)
+		->attach_defaults(lyrics=GTK2.Label("lyrics go here")->set_selectable(1)->unset_flags(GTK2.CanFocus),0,6,17,18)
+		->attach_defaults(position=TimeMarker(),0,6,18,19)
 		->attach_defaults(GTK2.HbuttonBox()
 			->add(Button("Play/pause",pause))
 			->add(Button("Stop [Ctrl-Q]",stop))
 			->add(Button("Silence all",notesoff))
 			->add(Button("Skip track",skip))
-		,0,5,19,20)
+		,0,6,19,20)
 	)->add_accel_group(GTK2.AccelGroup()
 		->connect('Q',4,0,stop,0)
 		->connect(' ',0,0,pause,0)
@@ -234,12 +240,115 @@ void reset()
 	hush(); alsa->reset(); alsa->wait();
 }
 
-void playmidis() {foreach (args[Arg.REST],string fn) {playmidi(fn); sleep(1);} exit(0);}
+//Advance to the next node as though the down arrow were pressed. (Is there a way to do this directly?)
+//Steps into a node's children if there are any; at the end of the current line of children, steps up and keeps going.
+//Returns 0 at end of list, otherwise returns a valid path (which will be the argument, mutated, if one was passed).
+GTK2.TreePath next(GTK2.TreePath|void path)
+{
+	if (path) while (!playliststore->get_iter(path->next())) {path->up(); if (!path->get_depth()) return 0;}
+	else path=GTK2.TreePath();
+	while (playliststore->iter_has_child(playliststore->get_iter(path))) path->down();
+	return path;
+}
 
-void playmidi(string fn)
+void playmidis()
+{
+	foreach (args[Arg.REST],string fn) playlist+=({genplaylist(fn)});
+	playlistview->expand_all();
+	GTK2.TreePath path=next();
+	do
+	{
+		playlistview->get_selection()->select_path(path);
+		array(int) ind=path->get_indices();
+		mapping(string:mixed) info=playlist[ind[0]];
+		foreach (ind[1..],int idx) info=info->children[idx];
+		playmidi(info); reset();
+		if (zero_type(info->delay)) sleep(1); else sleep(info->delay);
+	} while (next(path));
+	exit(0);
+}
+
+//Parse a Windows-format path (starting with a drive letter) and return a Unix-valid path
+//Will attempt to case-fix the path.
+mapping(string:string) drives=(["c:":System.get_home()+"/Music"]); //Example drive translation; if you are running this on a system with actual drive letters, feel free to leave this empty (which will effectively map "c:" to "c:").
+string parse_windows_path(string fn)
+{
+	array(string) path=explode_path(replace(fn,"\\","/"));
+	for (int i=0;i<sizeof(path);++i)
+	{
+		if (string replacement=drives[lower_case(path[i])]) path[i]=replacement;
+		string p=combine_path(@path[..i]);
+		if (file_stat(p)) continue; //Exists in current case, don't change it.
+		array(string) dir=get_dir(i&&combine_path(@path[..i-1]));
+		if (!dir) break; //Not found, stop processing
+		string lookfor=lower_case(path[i]);
+		foreach (dir,string f) if (lower_case(f)==lookfor) {path[i]=f; break;}
+	}
+	return combine_path(@path);
+}
+
+//Parse a playlist entry and return its mapping. May recurse to produce a ->children array.
+//Will not recurse more than 10 levels deep, to prevent infinite recursion
+mapping(string:mixed) genplaylist(string fn,GTK2.TreeIter|void parent,int|void level,string|void desc)
+{
+	mapping(string:mixed) cur=([]);
+	if (mixed ex=catch
+	{
+		cur->iter=playliststore->append(parent||GTK2.TreeIter());
+		cur->path=fn; cur->desc=desc || explode_path(fn)[-1];
+		if (level>10) {cur->desc+=" [recursion too deep]"; cur->invalid=1; break;}
+		object stat=file_stat(fn);
+		if (!stat) {cur->desc+=" [not found]"; cur->invalid=1; break;} //Shown in red, possibly skipped or possibly error'd
+		if (stat->isdir)
+		{
+			cur->children=({ });
+			foreach (sort(get_dir(fn)),string f) cur->children+=({genplaylist(combine_path(fn,f),cur->iter,level+1)});
+			break;
+		}
+		if (!stat->isreg) {cur->desc+=" [not a file]"; cur->invalid=1; break;}
+		if (stat->size>1048576) {cur->desc+=" [too large]"; cur->invalid=1; break;} //Safety against binary files. Not strictly necessary and may be removed later.
+		string content=Stdio.read_file(fn); if (!content) {cur->desc+=" [unreadable]"; cur->invalid=1; break;}
+		cur->content=content; cur->mtime=stat->mtime; //On file read, file_stat(cur->path)->mtime will be checked, and if the same as cur->mtime, cur->content is used instead of rereading the file.
+		if (has_prefix(content,"MThd")) {cur->playme=1; break;} //Standard MIDI file
+		if (sscanf(replace(content,"\r",""),"vanBasco's MIDI Player playlist file\n\"%s\";%d;%d;%d;%d%{\n\"%s\";\"%s\";%d;%d;%d;%f;%d;%d%}",string name,int unknown1,int startat,int numentries,int unknown2,array entries) && name)
+		{
+			//Compatibility: Parse a vbKar playlist (and thank you, vbKar, for tagging them so easily!!)
+			//vanBasco's Karaoke Player is a zero-dollar (but closed-source) MIDI player for Windows, which in many ways inspired this player.
+			//In vbKar, the last-played file is saved into startat, and playback resumes from there. I will ignore that here.
+			//Each entry is ({desc, filename, unknown1, unknown2, unknown3, tempo, unknown4, vol})
+			//One of those unknowns will be key change
+			//tempo is float, 1.0 is normal (higher = faster)
+			//vol is int, 128 is normal (and maximum; lower = quieter)
+			if (numentries!=sizeof(entries)) {cur->desc+=" [broken vbKar playlist]"; cur->invalid=1; break;}
+			cur->desc=name; cur->children=allocate(numentries);
+			foreach (entries;int i;array entry) cur->children[i]=genplaylist(parse_windows_path(entry[1]),cur->iter,level+1,entry[0]); //This is basically an array comprehension... it could almost be map() but not quite.
+			break;
+		}
+		/*
+		TODO: Have my own format of playlist, which will support features such as:
+		* Unix-style path names (naturally - mentioned only for comparison against vbKar's format)
+		* Descriptions different from filenames
+		* Different lengths of pause at the end of the track (default 1s or 2s, but may be set to 0 for "keep right on going", for instance)
+		* Other features as available in the player itself
+		Tag it so it's easy to see. Make it something I can just sscanf with %{ %}.
+		*/
+		cur->desc+=" [unknown format]"; cur->invalid=1;
+	}) {cur->desc+=" ["+describe_error(ex)+"]"; cur->invalid=1;} //Some sort of exception. Just show it and move on. (Deals with stuff like permissions issues and so on.)
+	playliststore->set_value(cur->iter,0,cur->desc || "??");
+	return cur;
+}
+
+void playmidi(string|mapping playme)
 {
 	skiptrack=0;
-	string data; if (mixed ex=catch {data=Stdio.read_file(fn);}) {write("%s\n",describe_backtrace(ex)); return;}
+	string data;
+	string fn;
+	if (mappingp(playme))
+	{
+		if (!playme->playme) return; //Not a normal, playable entry.
+		if (file_stat(fn=playme->path)->mtime==playme->mtime) data=playme->content; else fn=playme->fn;
+	}
+	if (!data) if (mixed ex=catch {data=Stdio.read_file(fn=playme);}) {write("%s\n",describe_backtrace(ex)); return;}
 	if (!data) {write("Unable to read %s\n",fn); return;}
 	array(array(string|array(array(int|string)))) chunks=parsesmf(data); if (!chunks) {write("Unable to parse %s (not a standard MIDI file?)\n",fn); return;}
 	int lyricpos=0,curlyricline=0;
