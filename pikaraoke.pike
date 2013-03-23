@@ -277,7 +277,7 @@ void playmidis()
 		mapping(string:mixed) info=playlist[ind[0]];
 		foreach (ind[1..],int idx) info=info->children[idx];
 		playmidi(info); reset();
-		if (zero_type(info->delay)) sleep(1); else sleep(info->delay);
+		if (zero_type(info->delay)) sleep(2); else sleep(info->delay);
 	} while (path=next(path));
 	exit(0);
 }
