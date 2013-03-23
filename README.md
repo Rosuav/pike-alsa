@@ -1,13 +1,16 @@
-pike-alsa
-=========
+pike-alsa and PiKaraoKe
+=======================
 
-ALSA bindings for Pike
+ALSA bindings for Pike, and a MIDI Karaoke player that uses them.
 
 Currently this is written as a dynamically-loadable module.
 
 Intermediate and binary files included for convenience; built against Pike 7.9.5
 on Ubuntu Linux x86_64. For other platforms, you will most likely need to rebuild
 using 'pike -x module' in the source directory.
+
+PiKaraoKe is a full-featured MIDI Karaoke player (portmanteau of "Pike"and
+"Karaoke") which uses pike-alsa as its backend.
 
 Licensed under the BSD Open Source license.
 

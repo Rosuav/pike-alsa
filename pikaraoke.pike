@@ -1,3 +1,7 @@
+//PiKaraoKe - a Pike Karaoke player
+//Uses pike-alsa and the underlying ALSA subsystem.
+//Works well connecting to TiMidity - just invoke 'timidity -iA' and use port 128:0
+
 array(string) patchnames=map(Array.transpose(array_sscanf(#"
 0x00 Acoustic Grand Piano     0x2B Contrabass          0x56 Lead 7 (fifths)
 0x01 Bright Acoustic Piano    0x2C Tremolo Strings     0x57 Lead 8 (bass+lead
@@ -203,7 +207,7 @@ int main(int argc,array(string) argv)
 	alsa->set_port(client,port);
 	GTK2.setup_gtk();
 	mainwindow=GTK2.Window(GTK2.WindowToplevel);
-	mainwindow->set_title("Pi-karao-ke Display");
+	mainwindow->set_title("PiKaraoKe");
 	GTK2.Table table=GTK2.Table(0,0,0)->set_col_spacings(5)->set_row_spacings(5)->attach_defaults(
 		GTK2.ScrolledWindow((["hscrollbar-policy":GTK2.POLICY_AUTOMATIC,"vscrollbar-policy":GTK2.POLICY_AUTOMATIC]))->set_size_request(200,-1)->add(
 			playlistview=GTK2.TreeView(playliststore=GTK2.TreeStore(({"string"})))->set_headers_visible(0)->append_column(GTK2.TreeViewColumn("",GTK2.CellRendererText(),"text",0)) //TODO: Subclass CellRendererText and make one that acknowledges the invalid status (so, give it the whole mapping)
