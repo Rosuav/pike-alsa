@@ -338,14 +338,29 @@ mapping(string:mixed) genplaylist(string fn,GTK2.TreeIter|void parent,int|void l
 			foreach (entries;int i;array entry) cur->children[i]=genplaylist(parse_windows_path(entry[1]),cur->iter,level+1,entry[0]); //This is basically an array comprehension... it could almost be map() but not quite.
 			break;
 		}
-		/*
-		TODO: Have my own format of playlist, which will support features such as:
-		* Unix-style path names (naturally - mentioned only for comparison against vbKar's format)
-		* Descriptions different from filenames
-		* Different lengths of pause at the end of the track (default 1s or 2s, but may be set to 0 for "keep right on going", for instance)
-		* Other features as available in the player itself
-		Tag it so it's easy to see. Make it something I can just sscanf with %{ %}.
-		*/
+		if (sscanf(replace(content,"\r",""),"PiKaraoKe Playlist File\n%{%O%s\n%}",array entries))
+		{
+			//Playlist file: first line is the playlist description (and possible attributes), subsequent lines are MIDI files (and possible attributes).
+			//The first element of each line is a quoted string. To avoid ambiguity, quotes and backslashes must be escaped with backslashes.
+			//Attributes follow the closing quote and are separated from the string and from each other by commas. Each one is keyword=value where value is either a quoted string or a number.
+			//Recognized attributes:
+			//- delay: int/float - seconds to wait after playing this file before moving on, default is 2
+			//- desc: string - description/name in the playlist, default is filename w/o path
+			cur->children=allocate(sizeof(entries)-1);
+			foreach (entries;int i;array entry)
+			{
+				mapping(string:string|int|float) attr=(mapping)(array_sscanf(entry[1],"%{,%s=%O%}")[0]); //TODO: Enforce data types here
+				if (!i)
+				{
+					//Global options - no attributes currently recognized
+					cur->desc=entry[0];
+					continue;
+				}
+				//Per-file options
+				cur->children[i-1]=genplaylist(entry[0],cur->iter,level+1,attr->desc)+(attr&(<"delay">)); //The multiset whitelists valid attributes and is also, effectively, a documentation hook - apart from desc, they should all be there.
+			}
+			break;
+		}
 		cur->desc+=" [unknown format]"; cur->invalid=1;
 	}) {cur->desc+=" ["+describe_error(ex)+"]"; cur->invalid=1;} //Some sort of exception. Just show it and move on. (Deals with stuff like permissions issues and so on.)
 	playliststore->set_value(cur->iter,0,cur->desc || "??");
