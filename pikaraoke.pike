@@ -323,7 +323,17 @@ mapping(string:mixed) genplaylist(string fn,GTK2.TreeIter|void parent,int|void l
 		if (stat->size>1048576) {cur->desc+=" [too large]"; cur->invalid=1; break;} //Safety against binary files. Not strictly necessary and may be removed later.
 		string content=Stdio.read_file(fn); if (!content) {cur->desc+=" [unreadable]"; cur->invalid=1; break;}
 		cur->content=content; cur->mtime=stat->mtime; //On file read, file_stat(cur->path)->mtime will be checked, and if the same as cur->mtime, cur->content is used instead of rereading the file.
-		if (has_prefix(content,"MThd")) {cur->playme=1; break;} //Standard MIDI file
+		if (has_prefix(content,"MThd"))
+		{
+			//Standard MIDI file. Pre-parse it into the internal structure to save time later - allows for run-on playback.
+			//This pushes a potentially-large delay (I've seen it take hundreds of milliseconds) from inter-track to initialization.
+			//Consequently it is then possible to set cur->delay=0.0 to run straight on from one track to another.
+			//The cost is memory and startup time. Every file has to be read and parsed. If this is a problem, consider having a
+			//thread doing this work in the background, one track ahead of the player.
+			cur->playme=1;
+			cur->chunks=parsesmf(content);
+			break;
+		}
 		if (sscanf(replace(content,"\r",""),"vanBasco's MIDI Player playlist file\n\"%s\";%d;%d;%d;%d%{\n\"%s\";\"%s\";%d;%d;%d;%f;%d;%d%}",string name,int unknown1,int startat,int numentries,int unknown2,array entries) && name)
 		{
 			//Compatibility: Parse a vbKar playlist (and thank you, vbKar, for tagging them so easily!!)
@@ -372,14 +382,18 @@ void playmidi(string|mapping playme)
 	skiptrack=0;
 	string data;
 	string fn;
+	array(array(string|array(array(int|string)))) chunks;
 	if (mappingp(playme))
 	{
 		if (!playme->playme) return; //Not a normal, playable entry.
-		if (file_stat(fn=playme->path)->mtime==playme->mtime) data=playme->content; else fn=playme->fn;
+		if (file_stat(fn=playme->path)->mtime==playme->mtime) chunks=playme->chunks; else fn=playme->fn;
 	}
-	if (!data) if (mixed ex=catch {data=Stdio.read_file(fn=playme);}) {write("%s\n",describe_backtrace(ex)); return;}
-	if (!data) {write("Unable to read %s\n",fn); return;}
-	array(array(string|array(array(int|string)))) chunks=parsesmf(data); if (!chunks) {write("Unable to parse %s (not a standard MIDI file?)\n",fn); return;}
+	if (!chunks)
+	{
+		if (!data) if (mixed ex=catch {data=Stdio.read_file(fn=playme);}) {write("%s\n",describe_backtrace(ex)); return;}
+		if (!data) {write("Unable to read %s\n",fn); return;}
+		chunks=parsesmf(data); if (!chunks) {write("Unable to parse %s (not a standard MIDI file?)\n",fn); return;}
+	}
 	int lyricpos=0,curlyricline=0;
 	constant lyricbefore=4,lyricafter=3; //There'll be X lyric lines that have been sung, one that's being sung, and Y that haven't been, shown in the current display.
 	mainwindow->resize(1,1);
