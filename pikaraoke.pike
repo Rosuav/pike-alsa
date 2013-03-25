@@ -240,6 +240,7 @@ int main(int argc,array(string) argv)
 	)->show_all()->signal_connect("delete_event",stop);
 	//mainwindow->signal_connect("key_press_event",lambda(object self,GDK2.Event ev) {write("Key! %O\n",(mapping)ev);},0,"",1); //Uncomment to dump keys to the console - good for finding the key codes for the accelgroup above
 	playlistview->signal_connect("row_activated",playlistdblclk);
+	write("NOTE: To improve playback accuracy, consider: renice -5 %d\n",getpid());
 	midithrd=thread_create(playmidis);
 	return -1;
 }
@@ -265,9 +266,19 @@ GTK2.TreePath next(GTK2.TreePath|void path)
 	return path;
 }
 
+void expand_content_to_chunks(array list)
+{
+	foreach (list,mapping cur)
+	{
+		if (cur->playme && cur->content && !cur->chunks) cur->chunks=parsesmf(cur->content);
+		if (cur->children) expand_content_to_chunks(cur->children);
+	}
+}
+
 void playmidis()
 {
 	foreach (args[Arg.REST],string fn) playlist+=({genplaylist(fn)});
+	thread_create(expand_content_to_chunks,playlist);
 	playlistview->expand_all();
 	GTK2.TreePath path=next();
 	do
@@ -331,7 +342,7 @@ mapping(string:mixed) genplaylist(string fn,GTK2.TreeIter|void parent,int|void l
 			//The cost is memory and startup time. Every file has to be read and parsed. If this is a problem, consider having a
 			//thread doing this work in the background, one track ahead of the player.
 			cur->playme=1;
-			cur->chunks=parsesmf(content);
+			//cur->chunks=parsesmf(content); //Yeah, we need that separate thread
 			break;
 		}
 		if (sscanf(replace(content,"\r",""),"vanBasco's MIDI Player playlist file\n\"%s\";%d;%d;%d;%d%{\n\"%s\";\"%s\";%d;%d;%d;%f;%d;%d%}",string name,int unknown1,int startat,int numentries,int unknown2,array entries) && name)
@@ -386,7 +397,8 @@ void playmidi(string|mapping playme)
 	if (mappingp(playme))
 	{
 		if (!playme->playme) return; //Not a normal, playable entry.
-		if (file_stat(fn=playme->path)->mtime==playme->mtime) chunks=playme->chunks; else fn=playme->fn;
+		if (file_stat(fn=playme->path)->mtime!=playme->mtime) fn=playme->fn;
+		else chunks=playme->chunks || (playme->chunks=parsesmf(playme->content));
 	}
 	if (!chunks)
 	{
