@@ -21,7 +21,7 @@ PIKECLASS ALSA
 	{
 		snd_seq_close(THIS->seq);
 	}
-	PIKEFUN array(int|string) list_ports()
+	PIKEFUN array(array(int|string)) list_ports()
 	{
 		int nports=0;
 		snd_seq_client_info_t *cinfo;
