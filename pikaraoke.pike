@@ -214,11 +214,13 @@ int main(int argc,array(string) argv)
 		)
 	,0,1,0,17);
 	for (int i=0;i<sizeof(piano);++i) table
-		->attach_defaults(channame[i] =GTK2.Label()->set_alignment(0.0,0.5),	1,2,i+1,i+2)
-		->attach_defaults(chanpatch[i]=GTK2.Label()->set_alignment(1.0,0.5),	2,3,i+1,i+2)
-		->attach_defaults(piano[i]=PianoKeyboard(),				3,4,i+1,i+2)
-		->attach_defaults(toggle(255,0,0,mute,i),				4,5,i+1,i+2)
-		->attach_defaults(toggle(0,255,255,solo,i),				5,6,i+1,i+2)
+		->attach_defaults(channame[i] =GTK2.Label()->set_alignment(0.0,0.5),1,2,i+1,i+2)
+		->attach_defaults(chanpatch[i]=GTK2.Label()->set_alignment(1.0,0.5),2,3,i+1,i+2)
+		//Expansion should be done in the first two, but not in these.
+		//The keyboard doesn't draw any bigger anyway, and the buttons just look silly.
+		->attach(piano[i]=PianoKeyboard(),3,4,i+1,i+2,GTK2.Fill,GTK2.Fill,0,0)
+		->attach(toggle(255,0,0,mute,i),  4,5,i+1,i+2,GTK2.Fill,GTK2.Fill,0,0)
+		->attach(toggle(0,255,255,solo,i),5,6,i+1,i+2,GTK2.Fill,GTK2.Fill,0,0)
 	;
 	mainwindow->add(table
 		->attach_defaults(status=GTK2.Label("status goes here")->set_size_request(-1,20)->set_alignment(0.0,0.0),1,6,0,1)
