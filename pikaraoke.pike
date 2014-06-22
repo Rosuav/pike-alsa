@@ -479,6 +479,7 @@ void playmidi(string|mapping playme)
 	foreach (events,array(int|string|array(int|string)) ev) if (ev[1]>=0xff && (ev[2]==0x05 || (!lyricinfo[0] && ev[2]==0x01 && ev[0])) && (lyrtrack==ev[1] || lyrtrack==-1))
 	{
 		string ly=ev[3];
+		catch {ly=utf8_to_string(ly);}; //Decode as UTF-8 if possible, fall back on Latin-1. I can't find hard specs on what non-ASCII bytes should be interpreted as; this is as good a policy as any.
 		if (ev[2]==1)
 		{
 			ev[2]=0x05;
